@@ -31,13 +31,6 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         return 0;
     }
 
-    auto parse_result = toml::parse_file( "configuration.toml" );
-    if(!parse_result)
-    {
-        std::puts("Failed to parse the config file");
-        return 0;
-    }
-
     const std::string_view file_path{argv[1]};
     const auto path_handle = ValidateFile(file_path);
     
