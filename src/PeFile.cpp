@@ -249,6 +249,43 @@ Win32::Architecture PeFile::FindArchitecture(PeFile &pe)
     return static_cast<Win32::Architecture>(nt_machine);
 }
 
+std::uint32_t PeFile::GetEntryPoint() const
+{
+    switch(m_arch)
+    {
+        case Win32::Architecture::AMD64:
+            return nt_headers64.OptionalHeader64.AddressOfEntryPoint;
+            break;
+        case Win32::Architecture::I386:
+            return nt_headers32.OptionalHeader32.AddressOfEntryPoint;
+            break;
+        default:
+            return 0;
+    }
+}
+
+std::optional<std::shared_ptr<std::byte[]>> PeFile::LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size)
+{
+    const auto raw_addr = RvaToRaw(rva);
+    if(raw_addr == 0)
+        return {};
+    
+    // Save the old position so it can be rolled back at the end
+    const auto previous_cur_position = m_file_handle.tellg();
+
+    // Seek to where the requested region is
+    m_file_handle.seekg(raw_addr);
+
+    std::shared_ptr<std::byte[]> buffer = std::make_shared<std::byte[]>(region_size);
+
+    // Read the file in the allocated buffer
+    m_file_handle.read(std::bit_cast<char *>(&buffer[0]), region_size);
+
+    // Roll back the region
+    m_file_handle.seekg(previous_cur_position);
+    return buffer;
+}
+
 /**
  * @brief 
  * Loads the file at the specified path. The file is not fully loaded in memory but rather

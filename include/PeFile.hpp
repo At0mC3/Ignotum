@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <string>
 #include <vector>
+#include <memory>
 #include <Win32.hpp>
 
 class PeFile
@@ -32,6 +33,8 @@ private:
     bool LoadSections();
     bool LoadNtHeaders();
 public:
+    std::uint32_t GetEntryPoint() const;
+    std::optional<std::shared_ptr<std::byte[]>> LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size);
     static std::optional<PeFile> Load(const std::filesystem::path& p, const LoadOption& load_option);
 };
 
