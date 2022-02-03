@@ -4,6 +4,7 @@
 #include <optional>
 #include <memory>
 #include <functional>
+#include <functional>
 #include <Zydis/Zydis.h>
 
 #include <PeFile.hpp>
@@ -13,7 +14,7 @@
 #define TOML_EXCEPTIONS 0
 #include <toml++/toml.h>
 
-std::shared_ptr<std::byte[]> TranslateInstructionBlock(const std::byte* buffer, const std::size_t& buffer_size)
+std::vector<std::byte> TranslateInstructionBlock(const std::byte* buffer, const std::size_t& buffer_size)
 {
     // Initialize formatter. Only required when you actually plan to do instruction
     // formatting ("disassembling"), like we do here
@@ -29,7 +30,7 @@ std::shared_ptr<std::byte[]> TranslateInstructionBlock(const std::byte* buffer, 
     ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE];
 
     const auto translated_buffer_size = buffer_size * 5;
-    std::shared_ptr<std::byte[]> translated_buffer = std::make_shared<std::byte[]>(translated_buffer_size);
+    std::vector<std::byte> translated_buffer(translated_buffer_size);
 
     // Holds where we are at in the buffer which indicates how much was used
     std::size_t translated_buffer_offset = 0;
@@ -44,7 +45,7 @@ std::shared_ptr<std::byte[]> TranslateInstructionBlock(const std::byte* buffer, 
         //     instruction.operand_count_visible, buffer, sizeof(buffer), 0);
         // puts(buffer);
 
-        const auto translation_result = Translation::TranslateInstruction(instruction, translated_buffer.get(), translated_buffer_size - translated_buffer_offset);
+        const auto translation_result = Translation::TranslateInstruction(instruction, &translated_buffer.front(), translated_buffer_size - translated_buffer_offset);
         // The result is holding an error and not the amount of bytes written
         if(std::holds_alternative<std::size_t>(translation_result) != true)
         {
