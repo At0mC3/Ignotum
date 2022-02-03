@@ -23,6 +23,7 @@ include_directories(${tomlplusplus_SOURCE_DIR}/include)
 add_executable(Ignotum 
     src/Main.cpp
     src/PeFile.cpp
+    src/Translation.cpp
 )
 
 target_link_libraries(Ignotum PRIVATE "Zydis")
