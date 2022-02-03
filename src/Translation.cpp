@@ -2,7 +2,7 @@
 
 std::variant<std::size_t, Translation::TranslationError> Translation::TranslateInstruction(
     const ZydisDecodedInstruction &instruction, 
-    std::byte *out_buffer, \
+    std::byte *out_buffer,
     const std::size_t &out_buffer_size
 )
 {
