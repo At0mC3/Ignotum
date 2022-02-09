@@ -3,6 +3,9 @@
 #include <iostream>
 #include <bit>
 
+using utl::Ok;
+using utl::Err;
+
 /**
  * @brief 
  * Converts the given relative virtual address to a raw address that
@@ -53,10 +56,10 @@ std::optional<Win32::IMAGE_DATA_DIRECTORY> PeFile::GetImportDirectory()
  */
 bool PeFile::MapImports(const std::string& dll_name, const std::uint32_t& first_thunk_rva)
 {
-    // Save the position so we can roll back to it after being done
+    // Save the position, so we can roll back to it after being done
     const auto saved_position = m_file_handle.tellg();
 
-    // We convert the rva to raw to access it in the buffer
+    // We convert the rva to raw, to access it in the buffer
     const auto first_thunk_raw = RvaToRaw(first_thunk_rva);
     // We failed to find it, return
     if(first_thunk_raw == 0)
@@ -79,7 +82,7 @@ bool PeFile::MapImports(const std::string& dll_name, const std::uint32_t& first_
         // Save the position to know where we were before jumping to the string rva
         const auto descriptor_position = m_file_handle.tellg();
 
-        // Seek to the raw addr of the name import
+        // Seek to the raw address of the name import
         m_file_handle.seekg(import_by_name_raw);
 
         Win32::IMAGE_IMPORT_BY_NAME name_import{ 0 };
@@ -92,7 +95,7 @@ bool PeFile::MapImports(const std::string& dll_name, const std::uint32_t& first_
         if(import_name[0] == '0x90')
             break;
         
-        // Seek to the raw addr of the name import
+        // Seek to the raw address of the name import
         m_file_handle.seekg(descriptor_position);
 
         imported_functions.emplace_back(ImportedFunction{
@@ -121,7 +124,7 @@ bool PeFile::LoadImports()
 
     const auto import_descriptor_rva = (*import_directory).VirtualAddress;
 
-    // No imports was found. This does not mean that the import parsing failed
+    // No imports were found. This does not mean that the import parsing failed
     if(import_descriptor_rva == 0)
         return true;
 
@@ -131,13 +134,13 @@ bool PeFile::LoadImports()
     if(import_descriptor_raw == 0)
         return false;
     
-    // Save the position so we can roll back to it after being done
+    // Save the position, so we can roll back to it after being done
     const auto saved_position = m_file_handle.tellg();
 
     m_file_handle.seekg(import_descriptor_raw);
 
-    // This is the table place in a array
-    Win32::IMAGE_IMPORT_DESCRIPTOR import_descriptor;
+    // This is the table place in an array
+    Win32::IMAGE_IMPORT_DESCRIPTOR import_descriptor { 0 };
     for(std::size_t i = 0;; ++i)
     {
         // We increment to go over every structures
@@ -168,10 +171,11 @@ bool PeFile::LoadImports()
         m_file_handle.seekg(descriptor_position);
 
         bool map_success = MapImports(dll_import_name, import_descriptor.OriginalFirstThunk);
-        // if(map_success == false)
-        //     return false;
+        if(!map_success)
+            return false;
     }
 
+    // Roll back to the original position before this function was called
     m_file_handle.seekg(saved_position);
     return true;
 }
@@ -182,7 +186,7 @@ bool PeFile::LoadImports()
  * @return true All of the sections were mapped successfully
  * @return false Bad data cause the mapping to fail
  */
-bool PeFile::LoadSections()
+void PeFile::LoadSections()
 {
     std::uint16_t section_count = 0;
     if(m_arch == Win32::Architecture::AMD64)
@@ -192,16 +196,20 @@ bool PeFile::LoadSections()
 
     for(std::uint16_t i = 0; i < section_count; ++i)
     {
-        Win32::IMAGE_SECTION_HEADER section;
+        Win32::IMAGE_SECTION_HEADER section{ 0 };
         m_file_handle.read(std::bit_cast<char *>(&section), sizeof(Win32::IMAGE_SECTION_HEADER));
+
+        // Verify if any data is invalid
+        if(section.PointerToRawData == 0)
+            continue;
+        if(section.PointerToRawData == 0)
+            continue;
 
         char* name = std::bit_cast<char*>(&section.Name);
 
         if(m_sections_map.find(name) == m_sections_map.end())
             m_sections_map[name] = section;
     }
-
-    return true;
 }
 
 /**
@@ -220,7 +228,7 @@ bool PeFile::LoadNtHeaders()
         case Win32::Architecture::I386:
             m_file_handle.read(std::bit_cast<char *>(&nt_headers32), sizeof(nt_headers32));
             break;
-        default:
+        case Win32::Architecture::NOT_SUPPORTED:
             return false;
     }
 
@@ -235,7 +243,7 @@ bool PeFile::LoadNtHeaders()
  */
 Win32::Architecture PeFile::FindArchitecture(PeFile &pe)
 {
-    // Save the position so we can roll back to it after being done
+    // Save the position, so we can roll back to it after being done
     const auto saved_position = pe.m_file_handle.tellg();
     pe.m_file_handle.seekg(sizeof(std::uint32_t), std::ios::cur);
 
@@ -249,32 +257,30 @@ Win32::Architecture PeFile::FindArchitecture(PeFile &pe)
     return static_cast<Win32::Architecture>(nt_machine);
 }
 
-std::uint32_t PeFile::GetEntryPoint() const
+[[maybe_unused]] std::uint32_t PeFile::GetEntryPoint() const
 {
     switch(m_arch)
     {
         case Win32::Architecture::AMD64:
             return nt_headers64.OptionalHeader64.AddressOfEntryPoint;
-            break;
         case Win32::Architecture::I386:
             return nt_headers32.OptionalHeader32.AddressOfEntryPoint;
-            break;
         default:
             return 0;
     }
 }
 
-std::optional<std::shared_ptr<std::byte[]>> PeFile::LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size)
+Result<std::shared_ptr<std::byte[]>, const char*> PeFile::LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size)
 {
-    const auto raw_addr = RvaToRaw(rva);
-    if(raw_addr == 0)
-        return {};
+    const auto raw_address = RvaToRaw(rva);
+    if(raw_address == 0)
+        return Err<std::shared_ptr<std::byte[]>, const char*>("The provided rva was not found in the sections");
     
-    // Save the old position so it can be rolled back at the end
+    // Save the old position, so it can be rolled back at the end
     const auto previous_cur_position = m_file_handle.tellg();
 
     // Seek to where the requested region is
-    m_file_handle.seekg(raw_addr);
+    m_file_handle.seekg(raw_address);
 
     std::shared_ptr<std::byte[]> buffer = std::make_shared<std::byte[]>(region_size);
 
@@ -283,7 +289,7 @@ std::optional<std::shared_ptr<std::byte[]>> PeFile::LoadByteArea(const std::uint
 
     // Roll back the region
     m_file_handle.seekg(previous_cur_position);
-    return buffer;
+    return Ok<std::shared_ptr<std::byte[]>, const char*>(buffer);
 }
 
 /**
@@ -296,81 +302,88 @@ std::optional<std::shared_ptr<std::byte[]>> PeFile::LoadByteArea(const std::uint
  * This can save quite a lot of memory and execution time depending on the file imports size
  * @return std::optional<PeFile> If the process succeeded, the file will be returned. Otherwise nullopt will be returned to signal a invalid file
  */
-std::optional<PeFile> PeFile::Load(const std::filesystem::path& path, const LoadOption& load_option) 
+Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem::path& path, const LoadOption& load_option)
 {
     const auto file_size = std::filesystem::file_size(path);
     if(file_size < sizeof(Win32::IMAGE_DOS_HEADER))
-        return {};
+        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
     
     // Create the struct and create the handle to the file using the open function.
-    PeFile pe;
-    pe.m_load_option = load_option;
+    auto pe = std::make_shared<PeFile>();
+    pe->m_load_option = load_option;
 
-    pe.m_file_handle.open(path, std::ios::in | std::ios::binary);
+    // Open the file and verify if the handle is valid
+    pe->m_file_handle.open(path, std::ios::in | std::ios::binary);
+    if(!pe->m_file_handle.is_open())
+        return Err<std::shared_ptr<PeFile>, const char*>("Could not open the file");
 
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
-    pe.m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4);
+    pe->m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4);
 
     // Init the variable and read into it
     std::int32_t e_lfanew = 0;
-    pe.m_file_handle.read(std::bit_cast<char*>(&e_lfanew), sizeof(std::int32_t));
+    pe->m_file_handle.read(std::bit_cast<char*>(&e_lfanew), sizeof(std::int32_t));
     if(e_lfanew < 0)
-        return {};
+        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
     
     // e_lfanew points to somewhere in the file and the file needs to match the size where that would be
     if(file_size < e_lfanew)
-        return {};
+        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
     
-    // Seek to the end of IMAGE_DOS_HEADER and remove 4 bytse to get the 32bit e_lfanew
-    pe.m_file_handle.seekg(e_lfanew);
+    // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
+    pe->m_file_handle.seekg(e_lfanew);
 
     // The cursor is now in the nt headers section of the file
 
     // A check is needed to see if the smallest version of nt headers can fit in the remaining space
     // The 32 bit and 64 bit version are identical except the entry point field is either 32 or 64 bits
     if(file_size - e_lfanew < sizeof(std::uint32_t) * 2)
-        return {};
+        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
     
-    pe.m_arch = FindArchitecture(pe);
+    pe->m_arch = FindArchitecture(*pe);
     
     auto nt_section_size = 0;
-    switch(pe.m_arch)
+    switch(pe->m_arch)
     {
         case Win32::Architecture::AMD64:
+        {
             if(file_size - e_lfanew < sizeof(Win32::IMAGE_NT_HEADERS64))
-                return {};
+                return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
             nt_section_size = sizeof(Win32::IMAGE_NT_HEADERS64);
             break;
+        }
         case Win32::Architecture::I386:
+        {
             if(file_size - e_lfanew < sizeof(Win32::IMAGE_NT_HEADERS32))
-                return {};
+                return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
             nt_section_size = sizeof(Win32::IMAGE_NT_HEADERS32);
             break;
-        default:
-            return {};
+        }
+        case Win32::Architecture::NOT_SUPPORTED:
             break;
     };
 
+    if(file_size - e_lfanew < nt_section_size)
+        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+
     // Load the NT_HEADERS in memory for easing parsing
-    const auto traverse_result = pe.LoadNtHeaders();
-    if(traverse_result != true)
-        return {};
+    const auto traverse_result = pe->LoadNtHeaders();
+    if(!traverse_result)
+        return Err<std::shared_ptr<PeFile>, const char*>("Failed to load the Nt Headers");
     
     // Check if there's enough space for at least 1 section before loading them
     if(file_size - e_lfanew < sizeof(nt_section_size) + sizeof(Win32::IMAGE_SECTION_HEADER))
-        return {};
+        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
 
     // Load the sections in memory
-    const auto sections_result = pe.LoadSections();
-    if(sections_result != true)
-        return {};
+    pe->LoadSections();
 
-    // If the lazy option was not selected, load all of the imported functions
-    if(pe.m_load_option != LoadOption::LAZY_LOAD)
+    // If the lazy option was not selected, load all the imported functions
+    if(pe->m_load_option != LoadOption::LAZY_LOAD)
     {
-        if(pe.LoadImports() != true)
-            return {};
+        if(!pe->LoadImports())
+            return Err<std::shared_ptr<PeFile>, const char*>("Failed to load the imports");
     }
 
-    return pe;
+    return Ok<std::shared_ptr<PeFile>, const char*>(pe);
 }

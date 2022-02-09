@@ -24,6 +24,7 @@ add_executable(Ignotum
     src/Main.cpp
     src/PeFile.cpp
     src/Translation.cpp
-)
+    src/Virtual.cpp
+        include/Parameter.hpp src/Parameter.cpp include/utl/Result.hpp include/utl/nResult.hpp)
 
 target_link_libraries(Ignotum PRIVATE "Zydis")

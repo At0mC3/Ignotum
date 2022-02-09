@@ -9,6 +9,9 @@
 #include <vector>
 #include <memory>
 #include <Win32.hpp>
+#include <utl/Result.hpp>
+
+using utl::Result;
 
 class PeFile
 {
@@ -18,7 +21,7 @@ public:
     LoadOption m_load_option{ LoadOption::LAZY_LOAD };
 private:
     std::ifstream m_file_handle;
-    Win32::Architecture m_arch{ Win32::Architecture::NOT_SUPPORTED };
+    Win32::Architecture m_arch;
     Win32::IMAGE_NT_HEADERS32 nt_headers32{ 0 };
     Win32::IMAGE_NT_HEADERS64 nt_headers64{ 0 };
     std::unordered_map<std::string, Win32::IMAGE_SECTION_HEADER> m_sections_map;
@@ -30,12 +33,12 @@ private:
     bool MapImports(const std::string& dll_name, const std::uint32_t& first_thunk_rva);
     std::optional<Win32::IMAGE_DATA_DIRECTORY> GetImportDirectory();
     bool LoadImports();
-    bool LoadSections();
+    void LoadSections();
     bool LoadNtHeaders();
 public:
-    std::uint32_t GetEntryPoint() const;
-    std::optional<std::shared_ptr<std::byte[]>> LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size);
-    static std::optional<PeFile> Load(const std::filesystem::path& p, const LoadOption& load_option);
+    [[maybe_unused]] [[nodiscard]] std::uint32_t GetEntryPoint() const;
+    Result<std::shared_ptr<std::byte[]>, const char*> LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size);
+    static Result<std::shared_ptr<PeFile>, const char*> Load(const std::filesystem::path& p, const LoadOption& load_option);
 };
 
 #endif
