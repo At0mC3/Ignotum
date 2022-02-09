@@ -471,4 +471,7 @@ FodyWeavers.xsd
 deps/
 build/
 
+cmake-build-debug-visual-studio/
+.idea/
+
 # End of https://www.toptal.com/developers/gitignore/api/visualstudio,visualstudiocode,cmake,c++
