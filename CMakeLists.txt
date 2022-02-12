@@ -10,15 +10,7 @@ option(ZYDIS_BUILD_TOOLS "" OFF)
 option(ZYDIS_BUILD_EXAMPLES "" OFF)
 add_subdirectory("deps/zydis")
 include_directories("include")
-
-include(FetchContent)
-FetchContent_Declare(
-    tomlplusplus
-    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-    GIT_TAG        v3.0.1
-)
-FetchContent_MakeAvailable(tomlplusplus)
-include_directories(${tomlplusplus_SOURCE_DIR}/include)
+include_directories("${CMAKE_SOURCE_DIR}/deps/argparse/include")
 
 add_executable(Ignotum 
     src/Main.cpp
