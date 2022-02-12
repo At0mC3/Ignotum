@@ -2,6 +2,7 @@
 #include <string_view>
 #include <filesystem>
 #include <functional>
+#include <vector>
 
 #include <PeFile.hpp>
 #include <Translation.hpp>
@@ -90,7 +91,13 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 
     arg_parser.add_argument("--path", "-p")
         .help("Path of the file to be translated")
-        .default_value(std::string(""))
+        .required();
+
+    arg_parser.add_argument("--block", "-b")
+        .help("Used to specify the block to be translated. The format used is: --block [address] [size]")
+        .scan<'x', std::uint64_t>()
+        .nargs(2)
+        .append()
         .required();
 
     try
@@ -101,15 +108,22 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
     {
         std::cout << error.what() << "\n";
         std::cout << arg_parser << "\n";
-        std::exit(-1);
+        std::exit(0);
     }
 
-    auto file_path = arg_parser.get<std::string>("--path");
+    const auto file_path = arg_parser.get<std::string>("--path");
     const auto path_handle = ValidateFile(file_path).Expect("The given file is not valid");
 
     // Parse the exe file to begin the translation process
     auto pe_file = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD)
             .Expect("Failed to load the specified file");
+
+    // Once the file was successfully loaded, we manage the specified block for translation
+    auto regions = arg_parser.get<std::vector<std::uint64_t>>("--block");
+    for(const auto& value : regions)
+    {
+        std::cout << std::hex << value << "\n";
+    }
 
     const auto BLOCK_SIZE = 0x9f;
 
