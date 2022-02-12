@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <vector>
+#include <utility>
 
 #include <PeFile.hpp>
 #include <Translation.hpp>
@@ -15,6 +16,8 @@ using utl::Err;
 
 #include <Zydis/Zydis.h>
 #include <argparse/argparse.hpp>
+
+#define DEBUG
 
 std::vector<std::byte> TranslateInstructionBlock(const std::byte* buffer, const std::size_t& buffer_size)
 {
@@ -85,6 +88,20 @@ Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& 
     return Ok<std::filesystem::path, const char*>(p);
 }
 
+Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRegions(const std::vector<std::size_t> &vec)
+{
+    if(vec.size() % 2 != 0)
+        return Err<std::vector<std::pair<std::size_t, std::size_t>>, const char*>("The format of the regions is invalid");
+
+    std::vector<std::pair<std::size_t, std::size_t>> pairs;
+    for(auto i = 0; i < vec.size() - 1; i += 2)
+    {
+        pairs.emplace_back(std::make_pair(vec[i], vec[i+1]));
+    }
+
+    return Ok<std::vector<std::pair<std::size_t, std::size_t>>, const char*>(pairs);
+}
+
 int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv) 
 {
     argparse::ArgumentParser arg_parser("Project Ignotum");
@@ -119,21 +136,26 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
             .Expect("Failed to load the specified file");
 
     // Once the file was successfully loaded, we manage the specified block for translation
-    auto regions = arg_parser.get<std::vector<std::uint64_t>>("--block");
-    for(const auto& value : regions)
+    const auto regions = arg_parser.get<std::vector<std::uint64_t>>("--block");
+    const auto region_pairs = ValidateRegions(regions).Expect("Failed to pair the regions");
+
+    // Go over every region specified to translated them
+    for(const auto& pair : region_pairs)
     {
-        std::cout << std::hex << value << "\n";
+        const auto block_size = pair.second;
+        const auto start_address = pair.first;
+
+#ifdef DEBUG
+        std::cout << std::hex << "Block size: " << block_size << "\n" << "Start address: " << start_address << "\n";
+#endif
+        // Load that section of the file in memory to start going over the instructions
+        const auto instruction_block = pe_file->LoadByteArea(start_address, block_size)
+                .Expect("The provided address could not be loaded in memory");
+
+        const auto raw_ptr = instruction_block.get();
+
+        const auto translated_block = TranslateInstructionBlock(raw_ptr, block_size);
     }
-
-    const auto BLOCK_SIZE = 0x9f;
-
-    // Load that section of the file in memory to start going over the instructions
-    const auto instruction_block = pe_file->LoadByteArea(0x4070, BLOCK_SIZE)
-            .Expect("The provided address could not be loaded in memory");
-
-    const auto raw_ptr = instruction_block.get();
-
-    const auto translated_block = TranslateInstructionBlock(raw_ptr, BLOCK_SIZE);
 
     return 0;
 }
