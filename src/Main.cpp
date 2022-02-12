@@ -1,24 +1,19 @@
 #include <iostream>
 #include <string_view>
 #include <filesystem>
-#include <optional>
-#include <memory>
 #include <functional>
-#include <functional>
-#include <Zydis/Zydis.h>
 
 #include <PeFile.hpp>
 #include <Translation.hpp>
 #include <Virtual.hpp>
-#include <string_view>
-// Disable the exceptions
-#define TOML_EXCEPTIONS 0
-#include <toml++/toml.h>
 
 #include <utl/Result.hpp>
 using utl::Result;
 using utl::Ok;
 using utl::Err;
+
+#include <Zydis/Zydis.h>
+#include <argparse/argparse.hpp>
 
 std::vector<std::byte> TranslateInstructionBlock(const std::byte* buffer, const std::size_t& buffer_size)
 {
@@ -91,14 +86,25 @@ Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& 
 
 int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv) 
 {
-    if(argc < 2) 
+    argparse::ArgumentParser arg_parser("Project Ignotum");
+
+    arg_parser.add_argument("--path", "-p")
+        .help("Path of the file to be translated")
+        .default_value(std::string(""))
+        .required();
+
+    try
     {
-        std::puts("Not enough arguments were given");
-        return 0;
+        arg_parser.parse_args(argc, argv);
+    }
+    catch (const std::exception& error)
+    {
+        std::cout << error.what() << "\n";
+        std::cout << arg_parser << "\n";
+        std::exit(-1);
     }
 
-    // Get the second argument as a string view and check if it's a valid file path
-    const std::string_view file_path{argv[1]};
+    auto file_path = arg_parser.get<std::string>("--path");
     const auto path_handle = ValidateFile(file_path).Expect("The given file is not valid");
 
     // Parse the exe file to begin the translation process
