@@ -4,3 +4,6 @@
 [submodule "deps/argparse"]
 	path = deps/argparse
 	url = https://github.com/p-ranav/argparse.git
+[submodule "deps/result"]
+	path = deps/result
+	url = https://github.com/At0mC3/result.git
