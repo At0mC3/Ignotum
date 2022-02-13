@@ -9,9 +9,7 @@
 #include <vector>
 #include <memory>
 #include <Win32.hpp>
-#include <utl/Result.hpp>
-
-using utl::Result;
+#include <result.h>
 
 class PeFile
 {

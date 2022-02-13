@@ -9,10 +9,7 @@
 #include <Translation.hpp>
 #include <Virtual.hpp>
 
-#include <utl/Result.hpp>
-using utl::Result;
-using utl::Ok;
-using utl::Err;
+#include <result.h>
 
 #include <Zydis/Zydis.h>
 #include <argparse/argparse.hpp>
@@ -81,17 +78,17 @@ Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& 
     std::filesystem::path p{file_path};
 
     if(!std::filesystem::exists(p))
-        return Err<std::filesystem::path, const char*>("The file does not exist");
+        return Err("The file does not exist");
     if(!std::filesystem::is_regular_file(p))
-        return Err<std::filesystem::path, const char*>("The format of the file is not valid");
+        return Err("The format of the file is not valid");
 
-    return Ok<std::filesystem::path, const char*>(p);
+    return Ok(p);
 }
 
 Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRegions(const std::vector<std::size_t> &vec)
 {
     if(vec.size() % 2 != 0)
-        return Err<std::vector<std::pair<std::size_t, std::size_t>>, const char*>("The format of the regions is invalid");
+        return Err("The format of the regions is invalid");
 
     std::vector<std::pair<std::size_t, std::size_t>> pairs;
     for(auto i = 0; i < vec.size() - 1; i += 2)
@@ -99,7 +96,7 @@ Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRe
         pairs.emplace_back(std::make_pair(vec[i], vec[i+1]));
     }
 
-    return Ok<std::vector<std::pair<std::size_t, std::size_t>>, const char*>(pairs);
+    return Ok(pairs);
 }
 
 int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv) 
@@ -129,15 +126,15 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
     }
 
     const auto file_path = arg_parser.get<std::string>("--path");
-    const auto path_handle = ValidateFile(file_path).Expect("The given file is not valid");
+    const auto path_handle = ValidateFile(file_path).expect("The given file is not valid");
 
     // Parse the exe file to begin the translation process
     auto pe_file = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD)
-            .Expect("Failed to load the specified file");
+            .expect("Failed to load the specified file");
 
     // Once the file was successfully loaded, we manage the specified block for translation
     const auto regions = arg_parser.get<std::vector<std::uint64_t>>("--block");
-    const auto region_pairs = ValidateRegions(regions).Expect("Failed to pair the regions");
+    const auto region_pairs = ValidateRegions(regions).expect("Failed to pair the regions");
 
     // Go over every region specified to translated them
     for(const auto& pair : region_pairs)
@@ -150,7 +147,7 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 #endif
         // Load that section of the file in memory to start going over the instructions
         const auto instruction_block = pe_file->LoadByteArea(start_address, block_size)
-                .Expect("The provided address could not be loaded in memory");
+                .expect("The provided address could not be loaded in memory");
 
         const auto raw_ptr = instruction_block.get();
 

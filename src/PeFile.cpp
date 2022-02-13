@@ -3,9 +3,6 @@
 #include <iostream>
 #include <bit>
 
-using utl::Ok;
-using utl::Err;
-
 /**
  * @brief 
  * Converts the given relative virtual address to a raw address that
@@ -92,7 +89,7 @@ bool PeFile::MapImports(const std::string& dll_name, const std::uint32_t& first_
         std::string import_name;
         // Read the name of the import
         std::getline(m_file_handle, import_name, '\0');
-        if(import_name[0] == '0x90')
+        if(import_name[0] == 'l')
             break;
         
         // Seek to the raw address of the name import
@@ -274,7 +271,7 @@ Result<std::shared_ptr<std::byte[]>, const char*> PeFile::LoadByteArea(const std
 {
     const auto raw_address = RvaToRaw(rva);
     if(raw_address == 0)
-        return Err<std::shared_ptr<std::byte[]>, const char*>("The provided rva was not found in the sections");
+        return Err("The provided rva was not found in the sections");
     
     // Save the old position, so it can be rolled back at the end
     const auto previous_cur_position = m_file_handle.tellg();
@@ -282,14 +279,14 @@ Result<std::shared_ptr<std::byte[]>, const char*> PeFile::LoadByteArea(const std
     // Seek to where the requested region is
     m_file_handle.seekg(raw_address);
 
-    std::shared_ptr<std::byte[]> buffer = std::make_shared<std::byte[]>(region_size);
+    std::shared_ptr<std::byte[]> buffer(new std::byte[region_size]);
 
     // Read the file in the allocated buffer
     m_file_handle.read(std::bit_cast<char *>(&buffer[0]), region_size);
 
     // Roll back the region
     m_file_handle.seekg(previous_cur_position);
-    return Ok<std::shared_ptr<std::byte[]>, const char*>(buffer);
+    return Ok(buffer);
 }
 
 /**
@@ -306,7 +303,7 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
 {
     const auto file_size = std::filesystem::file_size(path);
     if(file_size < sizeof(Win32::IMAGE_DOS_HEADER))
-        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+        return Err("File size invalid");
     
     // Create the struct and create the handle to the file using the open function.
     auto pe = std::make_shared<PeFile>();
@@ -315,7 +312,7 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     // Open the file and verify if the handle is valid
     pe->m_file_handle.open(path, std::ios::in | std::ios::binary);
     if(!pe->m_file_handle.is_open())
-        return Err<std::shared_ptr<PeFile>, const char*>("Could not open the file");
+        return Err("Could not open the file");
 
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
     pe->m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4);
@@ -324,11 +321,11 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     std::int32_t e_lfanew = 0;
     pe->m_file_handle.read(std::bit_cast<char*>(&e_lfanew), sizeof(std::int32_t));
     if(e_lfanew < 0)
-        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+        return Err("File size invalid");
     
     // e_lfanew points to somewhere in the file and the file needs to match the size where that would be
     if(file_size < e_lfanew)
-        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+        return Err("File size invalid");
     
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
     pe->m_file_handle.seekg(e_lfanew);
@@ -338,7 +335,7 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     // A check is needed to see if the smallest version of nt headers can fit in the remaining space
     // The 32 bit and 64 bit version are identical except the entry point field is either 32 or 64 bits
     if(file_size - e_lfanew < sizeof(std::uint32_t) * 2)
-        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+        return Err("File size invalid");
     
     pe->m_arch = FindArchitecture(*pe);
     
@@ -348,14 +345,14 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
         case Win32::Architecture::AMD64:
         {
             if(file_size - e_lfanew < sizeof(Win32::IMAGE_NT_HEADERS64))
-                return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+                return Err("File size invalid");
             nt_section_size = sizeof(Win32::IMAGE_NT_HEADERS64);
             break;
         }
         case Win32::Architecture::I386:
         {
             if(file_size - e_lfanew < sizeof(Win32::IMAGE_NT_HEADERS32))
-                return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+                return Err("File size invalid");
             nt_section_size = sizeof(Win32::IMAGE_NT_HEADERS32);
             break;
         }
@@ -364,16 +361,16 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     };
 
     if(file_size - e_lfanew < nt_section_size)
-        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+        return Err("File size invalid");
 
     // Load the NT_HEADERS in memory for easing parsing
     const auto traverse_result = pe->LoadNtHeaders();
     if(!traverse_result)
-        return Err<std::shared_ptr<PeFile>, const char*>("Failed to load the Nt Headers");
+        return Err("Failed to load the Nt Headers");
     
     // Check if there's enough space for at least 1 section before loading them
     if(file_size - e_lfanew < sizeof(nt_section_size) + sizeof(Win32::IMAGE_SECTION_HEADER))
-        return Err<std::shared_ptr<PeFile>, const char*>("File size invalid");
+        return Err("File size invalid");
 
     // Load the sections in memory
     pe->LoadSections();
@@ -382,8 +379,8 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     if(pe->m_load_option != LoadOption::LAZY_LOAD)
     {
         if(!pe->LoadImports())
-            return Err<std::shared_ptr<PeFile>, const char*>("Failed to load the imports");
+            return Err("Failed to load the imports");
     }
 
-    return Ok<std::shared_ptr<PeFile>, const char*>(pe);
+    return Ok(pe);
 }

@@ -17,19 +17,13 @@ namespace utl
         };
         bool m_is_error;
     public:
-        explicit Result<ResultType, ErrorType>(const ResultType& result) : m_result(result), m_is_error(false) {}
-        explicit Result<ResultType, ErrorType>(const ErrorType& result) : m_error(result), m_is_error(true) {}
+        explicit Result<ResultType, ErrorType>(ResultType result) : m_result(result), m_is_error(false) {}
+        explicit Result<ResultType, ErrorType>(ErrorType result) : m_error(result), m_is_error(true) {}
 
         explicit Result<ResultType, ErrorType>(ResultType&& result) : m_result(std::move(result)), m_is_error(false) {}
         explicit Result<ResultType, ErrorType>(ErrorType&& result) : m_error(std::move(result)), m_is_error(true) {}
     public:
-        ~Result<ResultType, ErrorType>()
-        {
-            if(m_is_error)
-            {
-
-            }
-        }
+        ~Result() = default;
 
         [[maybe_unused]] [[nodiscard]] bool IsOK() const { return !m_is_error; }
 
@@ -50,25 +44,13 @@ namespace utl
     };
 
     template<typename ResultType, typename ErrorType>
-    Result<ResultType, ErrorType> Ok(const ResultType& result)
+    Result<ResultType, ErrorType> Ok(ResultType result)
     {
         return Result<ResultType, ErrorType>(result);
     }
 
     template<typename ResultType, typename ErrorType>
-    Result<ResultType, ErrorType> Err(const ErrorType& result)
-    {
-        return Result<ResultType, ErrorType>(result);
-    }
-
-    template<typename ResultType, typename ErrorType>
-    Result<ResultType, ErrorType> Ok(ResultType&& result)
-    {
-        return Result<ResultType, ErrorType>(result);
-    }
-
-    template<typename ResultType, typename ErrorType>
-    Result<ResultType, ErrorType> Err(ErrorType&& result)
+    Result<ResultType, ErrorType> Err(ErrorType result)
     {
         return Result<ResultType, ErrorType>(result);
     }
