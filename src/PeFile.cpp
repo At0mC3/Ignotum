@@ -267,7 +267,7 @@ Win32::Architecture PeFile::FindArchitecture(PeFile &pe)
     }
 }
 
-Result<std::shared_ptr<std::byte[]>, const char*> PeFile::LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size)
+Result<MappedMemory, const char*> PeFile::LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size)
 {
     const auto raw_address = RvaToRaw(rva);
     if(raw_address == 0)
@@ -279,14 +279,15 @@ Result<std::shared_ptr<std::byte[]>, const char*> PeFile::LoadByteArea(const std
     // Seek to where the requested region is
     m_file_handle.seekg(raw_address);
 
-    std::shared_ptr<std::byte[]> buffer(new std::byte[region_size]);
+    auto memory_buffer = MappedMemory::Allocate(region_size).expect("Failed to allocate");
+//    std::shared_ptr<std::byte[]> buffer(new std::byte[region_size]);
 
     // Read the file in the allocated buffer
-    m_file_handle.read(std::bit_cast<char *>(&buffer[0]), region_size);
+    m_file_handle.read(std::bit_cast<char *>(memory_buffer.InnerPtr().get()), region_size);
 
     // Roll back the region
     m_file_handle.seekg(previous_cur_position);
-    return Ok(buffer);
+    return Ok(memory_buffer);
 }
 
 /**
