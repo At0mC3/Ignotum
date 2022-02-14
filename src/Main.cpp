@@ -16,7 +16,15 @@
 
 #define DEBUG
 
-/// Checks whether it's a file and it exists
+/**
+ * @brief In charge of validating a given path. It will check if exists.
+ * Then it will check if the file is valid and not a directory
+ * If it's valid, a filesystem::path will be returned
+ * 
+ * @param file_path The path of the file to be checked
+ * @return Result<std::filesystem::path, const char*>
+ * Either a path for the given path string or an error message 
+ */
 Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& file_path)
 {
     std::filesystem::path p{file_path};
@@ -29,6 +37,14 @@ Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& 
     return Ok(p);
 }
 
+/**
+ * @brief Given a vector of n amount of size_t, this function check if the size of it is big enough for pairs
+ * by using modulo. If the format is correct, they are then but in pairs to make them more readable when processing
+ * 
+ * @param vec The vector containing all of the addresses and the size of them
+ * @return Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*>
+ * A vector of pair is returned is it was successful, otherwise, an error message is returned 
+ */
 Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRegions(const std::vector<std::size_t> &vec)
 {
     if(vec.size() % 2 != 0)
