@@ -267,7 +267,7 @@ Win32::Architecture PeFile::FindArchitecture(PeFile &pe)
     }
 }
 
-Result<MappedMemory, const char*> PeFile::LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size)
+Result<MappedMemory, const char*> PeFile::LoadRegion(const std::uint32_t& rva, const std::size_t& region_size)
 {
     const auto raw_address = RvaToRaw(rva);
     if(raw_address == 0)

@@ -37,7 +37,7 @@ private:
     bool LoadNtHeaders();
 public:
     [[maybe_unused]] [[nodiscard]] std::uint32_t GetEntryPoint() const;
-    Result<MappedMemory, const char*> LoadByteArea(const std::uint32_t& rva, const std::size_t& region_size);
+    Result<MappedMemory, const char*> LoadRegion(const std::uint32_t& rva, const std::size_t& region_size);
     static Result<std::shared_ptr<PeFile>, const char*> Load(const std::filesystem::path& p, const LoadOption& load_option);
 };
 
