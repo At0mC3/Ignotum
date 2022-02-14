@@ -10,6 +10,7 @@
 #include <Virtual.hpp>
 #include <Parameter.hpp>
 #include <MappedMemory.hpp>
+#include <utl/Utl.hpp>
 
 // 3rd party Library
 #include <Zydis/Zydis.h>
@@ -28,7 +29,7 @@ namespace Translation
         OUT_OF_MEMORY
     };
 
-    Result<bool, TranslationError> TranslateInstruction(
+    HOT_PATH Result<bool, TranslationError> TranslateInstruction(
         const ZydisDecodedInstruction &instruction,
         const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
         MappedMemory& mapped_memory
