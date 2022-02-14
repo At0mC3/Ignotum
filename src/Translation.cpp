@@ -1,17 +1,67 @@
+#include <type_traits>
+
 #include <Translation.hpp>
+
+using Virtual::Parameter;
+
+HOT_PATH FORCE_INLINE void Ldr(const ZydisRegister& reg, MappedMemory& mapped_memory)
+{
+    const auto inst = Virtual::Instruction(Virtual::Parameter(static_cast<std::uint16_t>(reg)), Virtual::Command::kLdr);
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+}
+
+HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandImm_& imm, MappedMemory& mapped_memory)
+{
+    // Construct the instruction and write it to the memory
+    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdImm);
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+
+    assert(!imm.is_signed && "Signed value not supported in Ldm");
+
+    auto unsigned_imm = imm.value.u;
+    // Write the immediate in the mapped memory
+    mapped_memory.Write<decltype(unsigned_imm)>(unsigned_imm);
+}
 
 HOT_PATH FORCE_INLINE void SubInstLogic(
         const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
         MappedMemory& mapped_memory
-        )
+)
 {
-    switch(operands[0].type)
+    const auto first_operand = operands[0];
+    switch(first_operand.type)
     {
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_REGISTER:
+            Ldr(first_operand.reg.value, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
+            Ldm(first_operand.imm, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_POINTER:
+            // LdPtr(operands[0].ptr.segment, mapped_memory)
             break;
         default:
             break;
     }
+
+    const auto second_operand = operands[1];
+    switch(second_operand.type)
+    {
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_REGISTER:
+            Ldr(first_operand.reg.value, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
+            Ldm(first_operand.imm, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_POINTER:
+            // LdPtr(operands[0].ptr.segment, mapped_memory)
+            break;
+        default:
+            break;
+    }
+
+    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 }
 
 HOT_PATH FORCE_INLINE Result<bool, Translation::TranslationError> Translation::TranslateInstruction(
