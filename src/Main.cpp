@@ -8,16 +8,18 @@
 #include <PeFile.hpp>
 #include <Translation.hpp>
 #include <Virtual.hpp>
+#include <MappedMemory.hpp>
 
 #include <result.h>
-
 #include <Zydis/Zydis.h>
 #include <argparse/argparse.hpp>
 
 #define DEBUG
 
-std::vector<std::byte> TranslateInstructionBlock(const std::byte* buffer, const std::size_t& buffer_size)
+MappedMemory TranslateInstructionBlock(const MappedMemory& instruction_block)
 {
+    const auto inner_buffer_size = instruction_block.Size();
+    const auto buffer = instruction_block.InnerPtr().get();
     // Initialize formatter. Only required when you actually plan to do instruction
     // formatting ("disassembling"), like we do here
     ZydisFormatter formatter;
@@ -31,45 +33,30 @@ std::vector<std::byte> TranslateInstructionBlock(const std::byte* buffer, const 
     ZydisDecodedInstruction instruction;
     ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE];
 
-    const auto translated_buffer_size = buffer_size * 5;
-    std::vector<std::byte> translated_buffer(translated_buffer_size);
+    auto virtual_inst_memory = MappedMemory::Allocate(inner_buffer_size * 5)
+            .expect("Failed to allocate a buffer for the virtual instructions");
 
-    // Holds where we are at in the buffer which indicates how much was used
-    std::size_t translated_buffer_offset = 0;
-
-    while (ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, buffer + offset, buffer_size - offset,
+    while (ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, buffer + offset, inner_buffer_size - offset,
         &instruction, operands, ZYDIS_MAX_OPERAND_COUNT_VISIBLE, 
         ZYDIS_DFLAG_VISIBLE_OPERANDS_ONLY)))
     {
-        // Format & print the binary instruction structure to human readable format
-        char buffer[256];
+        // Format & print the binary instruction structure to human-readable format
+        char text_buffer[256] = { 0 };
         ZydisFormatterFormatInstruction(&formatter, &instruction, operands,
-            instruction.operand_count_visible, buffer, sizeof(buffer), 0);
-        puts(buffer);
+            instruction.operand_count_visible, text_buffer, sizeof(text_buffer), 0);
+        std::puts(text_buffer);
 
         const auto translation_result = Translation::TranslateInstruction(
             instruction,
             operands,
-            (&translated_buffer.front()) + translated_buffer_offset, 
-            translated_buffer_size - translated_buffer_offset
-        );
+            virtual_inst_memory
+        ).expect("Instruction not support");
 
-        // The result is holding an error and not the amount of bytes written
-        if(!std::holds_alternative<std::size_t>(translation_result))
-        {
-            // Handle the instruction not being translated
-            // std::cout << "Instruction not found\n";
-        }
-        else
-        {
-            // Add the size of the newly translated instruction to the index to keep the bounds of the buffer in check
-            translated_buffer_offset += std::get<std::size_t>(translation_result);
-        }
 
         offset += instruction.length;
     }
 
-    return translated_buffer;
+    return virtual_inst_memory;
 }
 
 /// Checks whether it's a file and it exists
@@ -146,12 +133,10 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         std::cout << std::hex << "Block size: " << block_size << "\n" << "Start address: " << start_address << "\n";
 #endif
         // Load that section of the file in memory to start going over the instructions
-        const auto instruction_block = pe_file->LoadByteArea(start_address, block_size)
+        const auto instruction_block = pe_file->LoadRegion(start_address, block_size)
                 .expect("The provided address could not be loaded in memory");
 
-        const auto raw_ptr = instruction_block.get();
-
-        const auto translated_block = TranslateInstructionBlock(raw_ptr, block_size);
+        const auto translated_block = TranslateInstructionBlock(instruction_block);
     }
 
     return 0;
