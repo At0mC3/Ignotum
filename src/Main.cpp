@@ -16,49 +16,6 @@
 
 #define DEBUG
 
-MappedMemory TranslateInstructionBlock(const MappedMemory& instruction_block)
-{
-    const auto inner_buffer_size = instruction_block.Size();
-    const auto buffer = instruction_block.InnerPtr().get();
-    // Initialize formatter. Only required when you actually plan to do instruction
-    // formatting ("disassembling"), like we do here
-    ZydisFormatter formatter;
-    ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
-
-    // Initialize decoder context
-    ZydisDecoder decoder;
-    ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
-
-    std::size_t offset = 0;
-    ZydisDecodedInstruction instruction;
-    ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE];
-
-    auto virtual_inst_memory = MappedMemory::Allocate(inner_buffer_size * 5)
-            .expect("Failed to allocate a buffer for the virtual instructions");
-
-    while (ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, buffer + offset, inner_buffer_size - offset,
-        &instruction, operands, ZYDIS_MAX_OPERAND_COUNT_VISIBLE, 
-        ZYDIS_DFLAG_VISIBLE_OPERANDS_ONLY)))
-    {
-        // Format & print the binary instruction structure to human-readable format
-        char text_buffer[256] = { 0 };
-        ZydisFormatterFormatInstruction(&formatter, &instruction, operands,
-            instruction.operand_count_visible, text_buffer, sizeof(text_buffer), 0);
-        std::puts(text_buffer);
-
-        const auto translation_result = Translation::TranslateInstruction(
-            instruction,
-            operands,
-            virtual_inst_memory
-        ).expect("Instruction not support");
-
-
-        offset += instruction.length;
-    }
-
-    return virtual_inst_memory;
-}
-
 /// Checks whether it's a file and it exists
 Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& file_path)
 {
@@ -136,7 +93,7 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         const auto instruction_block = pe_file->LoadRegion(start_address, block_size)
                 .expect("The provided address could not be loaded in memory");
 
-        const auto translated_block = TranslateInstructionBlock(instruction_block);
+        const auto translated_block = Translation::TranslateInstructionBlock(instruction_block);
     }
 
     return 0;

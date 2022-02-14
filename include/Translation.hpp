@@ -29,11 +29,13 @@ namespace Translation
         OUT_OF_MEMORY
     };
 
-    HOT_PATH Result<bool, TranslationError> TranslateInstruction(
+    HOT_PATH FORCE_INLINE Result<bool, TranslationError> TranslateInstruction(
         const ZydisDecodedInstruction &instruction,
         const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
         MappedMemory& mapped_memory
     );
+
+    HOT_PATH MappedMemory TranslateInstructionBlock(const MappedMemory& instruction_block);
 }
 
 #endif
