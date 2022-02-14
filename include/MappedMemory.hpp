@@ -25,6 +25,21 @@ public:
     [[nodiscard]] std::shared_ptr<std::byte[]> InnerPtr() const { return m_buffer; }
     [[nodiscard]] std::uintmax_t Size() const { return m_size; }
     [[nodiscard]] std::uintmax_t CursorPos() const { return m_cursor_i; }
+public:
+    template<class T, class P>
+    [[nodiscard]] bool Write(P value) 
+    {
+        if(m_size - m_cursor_i < sizeof(value))
+            return false;
+
+        // Get a pointer to the buffer and cast it to the size of the given value
+        auto* ptr = m_buffer.get() + m_cursor_i;
+        *std::bit_cast<T*>(ptr) = value;
+
+        // Increment the cursor
+        m_cursor_i += sizeof(value);
+        return true;
+    }
 };
 
 #endif //IGNOTUM_MAPPEDMEMORY_HPP
