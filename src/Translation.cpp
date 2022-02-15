@@ -60,7 +60,7 @@ HOT_PATH FORCE_INLINE void SubInstLogic(
             break;
     }
 
-    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
+    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVSub);
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 }
 
