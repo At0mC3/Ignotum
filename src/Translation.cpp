@@ -23,9 +23,19 @@ HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandImm
     mapped_memory.Write<decltype(unsigned_imm)>(unsigned_imm);
 }
 
-HOT_PATH FORCE_INLINE void SubInstLogic(
-        const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
-        MappedMemory& mapped_memory
+/**
+ * @brief 
+ * 2 operands instructions are very commin in x86, instead of creating a switch every time, this function
+ * will handle the logic of generating the proper virtual instructions
+ * 
+ * @param operand The operand to be handled by the function
+ * @param mapped_memory 
+ * Mapped memory which will receive the virtual instructions
+ * @return HOT_PATH 
+ */
+HOT_PATH FORCE_INLINE void HandleGenericOperands(
+    const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
+    MappedMemory& mapped_memory
 )
 {
     const auto first_operand = operands[0];
@@ -59,9 +69,38 @@ HOT_PATH FORCE_INLINE void SubInstLogic(
         default:
             break;
     }
+}
+
+HOT_PATH FORCE_INLINE void SubInstLogic(
+        const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
+        MappedMemory& mapped_memory
+)
+{
+    HandleGenericOperands(operands, mapped_memory);
+
+    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVSub);
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+}
+
+HOT_PATH FORCE_INLINE void AddInstLogic(
+    const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
+    MappedMemory& mapped_memory
+)
+{
+    HandleGenericOperands(operands, mapped_memory);
 
     const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+}
+
+HOT_PATH FORCE_INLINE void MovInstLogic(
+    const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
+    MappedMemory& mapped_memory
+)
+{
+    HandleGenericOperands(operands, mapped_memory);
+
+    // const auto inst = Virtual::Instruction(Parameter(Parameter::kNone))
 }
 
 HOT_PATH FORCE_INLINE Result<bool, Translation::TranslationError> Translation::TranslateInstruction(
@@ -74,6 +113,9 @@ HOT_PATH FORCE_INLINE Result<bool, Translation::TranslationError> Translation::T
     {
         case ZydisMnemonic::ZYDIS_MNEMONIC_SUB:
             SubInstLogic(operands, mapped_memory);
+            break;
+        case ZydisMnemonic::ZYDIS_MNEMONIC_ADD:
+            AddInstLogic(operands, mapped_memory);
             break;
         default:
             return Err(TranslationError::INSTRUCTION_NOT_FOUND);
