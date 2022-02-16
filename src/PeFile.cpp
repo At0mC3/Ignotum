@@ -267,6 +267,26 @@ Win32::Architecture PeFile::FindArchitecture(PeFile &pe)
     }
 }
 
+Result<bool, const char*> PeFile::WriteToRegion(const std::uint32_t& rva, const MappedMemory& mapped_memory)
+{
+    const auto raw_address = RvaToRaw(rva);
+    if(raw_address == 0)
+        return Err("The provided rva was not found in the sections");
+    
+    // Save the old position, so it can be rolled back at the end
+    const auto previous_cur_position = m_file_handle.tellg();
+
+    // Seek to where the requested region is
+    m_file_handle.seekg(raw_address);
+
+    // Write the memory to the specified location
+    m_file_handle.write(std::bit_cast<const char*>(mapped_memory.InnerPtr().get()), mapped_memory.Size());
+
+    // Roll back the region
+    m_file_handle.seekg(previous_cur_position);
+    return Ok(true);
+}
+
 Result<MappedMemory, const char*> PeFile::LoadRegion(const std::uint32_t& rva, const std::size_t& region_size)
 {
     const auto raw_address = RvaToRaw(rva);
@@ -311,7 +331,7 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     pe->m_load_option = load_option;
 
     // Open the file and verify if the handle is valid
-    pe->m_file_handle.open(path, std::ios::in | std::ios::binary);
+    pe->m_file_handle.open(path, std::ios::in | std::ios::out | std::ios::binary);
     if(!pe->m_file_handle.is_open())
         return Err("Could not open the file");
 
