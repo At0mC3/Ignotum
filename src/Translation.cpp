@@ -57,6 +57,21 @@ HOT_PATH FORCE_INLINE void Ldi(std::uint64_t imm, MappedMemory& mapped_memory)
     mapped_memory.Write<decltype(imm)>(imm);
 }
 
+/**
+ * @brief 
+ * 
+ * This function is in charge of handling the complex memory addressing of x86
+ * Example: push dword ptr[eax + ecx * 4 + 1000]
+ * 
+ * This function would push the value of eax and 1000 on the virtual stack and add them together.
+ * It would then push ecx and 4 on the stack and multiply them together.
+ * It would then add those two results together before executing the instruction that would access that memory region.
+ * 
+ * @param operand The operand to be handled by the function
+ * @param mapped_memory 
+ * Mapped memory which will receive the virtual instructions
+ * @return HOT_PATH 
+ */
 HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand& operand, MappedMemory& mapped_memory)
 {
     // Load the content of the base register on the stack
@@ -73,10 +88,9 @@ HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand& ope
     else
         Ldi(0, mapped_memory);
 
-    
+    // Generate the virtual instruction to add both values together
     const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);    
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
-    
 
     // Load the content of the index register on the stack
     // If the operation doesn't use a index, just load 0
