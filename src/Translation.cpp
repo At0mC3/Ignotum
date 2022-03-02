@@ -1,8 +1,34 @@
 #include <type_traits>
+#include <iostream>
 
 #include <Translation.hpp>
 
 using Virtual::Parameter;
+
+std::string DebugPrintReg(const ZydisRegister& reg)
+{
+    switch(reg)
+    {
+        case ZydisRegister::ZYDIS_REGISTER_RAX:
+            return "RAX";
+        case ZydisRegister::ZYDIS_REGISTER_RBX:
+            return "RBX";
+        case ZydisRegister::ZYDIS_REGISTER_RCX:
+            return "RCX";
+        case ZydisRegister::ZYDIS_REGISTER_RDX:
+            return "RDX";
+        case ZydisRegister::ZYDIS_REGISTER_RDI:
+            return "RDI";
+        case ZydisRegister::ZYDIS_REGISTER_RSI:
+            return "RSI";
+        case ZydisRegister::ZYDIS_REGISTER_RSP:
+            return "RSP";
+        case ZydisRegister::ZYDIS_REGISTER_RBP:
+            return "RBP";
+        default:
+            return "None";
+    }
+}
 
 HOT_PATH FORCE_INLINE void Ldr(const ZydisRegister& reg, MappedMemory& mapped_memory)
 {
@@ -21,6 +47,58 @@ HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandImm
     auto unsigned_imm = imm.value.u;
     // Write the immediate in the mapped memory
     mapped_memory.Write<decltype(unsigned_imm)>(unsigned_imm);
+}
+
+HOT_PATH FORCE_INLINE void Ldi(std::uint64_t imm, MappedMemory& mapped_memory)
+{
+    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdImm);
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+
+    mapped_memory.Write<decltype(imm)>(imm);
+}
+
+HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand& operand, MappedMemory& mapped_memory)
+{
+    // Load the content of the base register on the stack
+    // If the operation doesn't use a base, just load 0
+    if(operand.mem.base != ZYDIS_REGISTER_NONE)
+        Ldr(operand.mem.base, mapped_memory);
+    else
+        Ldi(0, mapped_memory);
+
+    // Load the content of the base register on the stack
+    // If the operation doesn't use a base, just load 0
+    if(operand.mem.disp.has_displacement)
+        Ldi(operand.mem.disp.value, mapped_memory);
+    else
+        Ldi(0, mapped_memory);
+
+    
+    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);    
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+    
+
+    // Load the content of the index register on the stack
+    // If the operation doesn't use a index, just load 0
+    if(operand.mem.index != ZYDIS_REGISTER_NONE)
+        Ldr(operand.mem.index, mapped_memory);
+    else
+        Ldi(0, mapped_memory);
+
+    if(operand.mem.scale != 0)
+    {
+        Ldi(operand.mem.scale, mapped_memory);
+
+        const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVMul);
+        mapped_memory.Write<Virtual::InstructionLength>(inst);
+    }
+    else
+    {
+        Ldi(0, mapped_memory);
+
+        const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
+        mapped_memory.Write<Virtual::InstructionLength>(inst);
+    }
 }
 
 /**
@@ -45,6 +123,7 @@ HOT_PATH FORCE_INLINE void HandleGenericOperands(
             Ldr(first_operand.reg.value, mapped_memory);
             break;
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
+            std::cout << "[DEBUG]: " << DebugPrintReg(first_operand.mem.base) << "\n";
             Ldm(first_operand.imm, mapped_memory);
             break;
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_POINTER:
@@ -116,6 +195,9 @@ HOT_PATH FORCE_INLINE Result<bool, Translation::TranslationError> Translation::T
             break;
         case ZydisMnemonic::ZYDIS_MNEMONIC_ADD:
             AddInstLogic(operands, mapped_memory);
+            break;
+        case ZydisMnemonic::ZYDIS_MNEMONIC_MOV:
+            MovInstLogic(operands, mapped_memory);
             break;
         default:
             return Err(TranslationError::INSTRUCTION_NOT_FOUND);
