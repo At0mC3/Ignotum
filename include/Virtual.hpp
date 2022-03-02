@@ -15,7 +15,8 @@ namespace Virtual
         kLdm,
         kLdImm,
         kVAdd,
-        kVSub
+        kVSub,
+        kVMul
     };
 
     enum class RegisterMap : std::uint8_t
