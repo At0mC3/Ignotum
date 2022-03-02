@@ -36,7 +36,8 @@ HOT_PATH FORCE_INLINE void Ldr(const ZydisRegister& reg, MappedMemory& mapped_me
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 }
 
-HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandImm_& imm, MappedMemory& mapped_memory)
+
+HOT_PATH FORCE_INLINE void Ldi(const ZydisDecodedOperand::ZydisDecodedOperandImm_& imm, MappedMemory& mapped_memory)
 {
     // Construct the instruction and write it to the memory
     const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdImm);
@@ -49,13 +50,17 @@ HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandImm
     mapped_memory.Write<decltype(unsigned_imm)>(unsigned_imm);
 }
 
-HOT_PATH FORCE_INLINE void Ldi(std::uint64_t imm, MappedMemory& mapped_memory)
+HOT_PATH FORCE_INLINE void Ldi(const std::uint64_t& imm, MappedMemory& mapped_memory)
 {
+    // Construct the instruction and write it to the memory
     const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdImm);
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 
-    mapped_memory.Write<decltype(imm)>(imm);
+    auto unsigned_imm = imm;
+    // Write the immediate in the mapped memory
+    mapped_memory.Write<decltype(unsigned_imm)>(unsigned_imm);
 }
+
 
 /**
  * @brief 
@@ -72,19 +77,19 @@ HOT_PATH FORCE_INLINE void Ldi(std::uint64_t imm, MappedMemory& mapped_memory)
  * Mapped memory which will receive the virtual instructions
  * @return HOT_PATH 
  */
-HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand& operand, MappedMemory& mapped_memory)
+HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand::ZydisDecodedOperandMem_& mem, MappedMemory& mapped_memory)
 {
     // Load the content of the base register on the stack
     // If the operation doesn't use a base, just load 0
-    if(operand.mem.base != ZYDIS_REGISTER_NONE)
-        Ldr(operand.mem.base, mapped_memory);
+    if(mem.base != ZYDIS_REGISTER_NONE)
+        Ldr(mem.base, mapped_memory);
     else
         Ldi(0, mapped_memory);
 
     // Load the content of the base register on the stack
     // If the operation doesn't use a base, just load 0
-    if(operand.mem.disp.has_displacement)
-        Ldi(operand.mem.disp.value, mapped_memory);
+    if(mem.disp.has_displacement)
+        Ldi(mem.disp.value, mapped_memory);
     else
         Ldi(0, mapped_memory);
 
@@ -94,14 +99,14 @@ HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand& ope
 
     // Load the content of the index register on the stack
     // If the operation doesn't use a index, just load 0
-    if(operand.mem.index != ZYDIS_REGISTER_NONE)
-        Ldr(operand.mem.index, mapped_memory);
+    if(mem.index != ZYDIS_REGISTER_NONE)
+        Ldr(mem.index, mapped_memory);
     else
         Ldi(0, mapped_memory);
 
-    if(operand.mem.scale != 0)
+    if(mem.scale != 0)
     {
-        Ldi(operand.mem.scale, mapped_memory);
+        Ldi(mem.scale, mapped_memory);
 
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVMul);
         mapped_memory.Write<Virtual::InstructionLength>(inst);
@@ -114,6 +119,18 @@ HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand& ope
         mapped_memory.Write<Virtual::InstructionLength>(inst);
     }
 }
+
+
+HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandMem_& mem, MappedMemory& mapped_memory)
+{
+    // Unroll the memory addressing and place the value on the stack
+    UnrollMemoryAddressing(mem, mapped_memory);
+
+    // Load the data specified at the unrolled memory addressing
+    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdm);
+    mapped_memory.Write<Virtual::InstructionLength>(inst);
+}
+
 
 /**
  * @brief 
@@ -138,7 +155,7 @@ HOT_PATH FORCE_INLINE void HandleGenericOperands(
             break;
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
             std::cout << "[DEBUG]: " << DebugPrintReg(first_operand.mem.base) << "\n";
-            Ldm(first_operand.imm, mapped_memory);
+            Ldm(first_operand.mem, mapped_memory);
             break;
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_POINTER:
             // LdPtr(operands[0].ptr.segment, mapped_memory)
@@ -154,10 +171,10 @@ HOT_PATH FORCE_INLINE void HandleGenericOperands(
             Ldr(first_operand.reg.value, mapped_memory);
             break;
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
-            Ldm(first_operand.imm, mapped_memory);
+            Ldm(first_operand.mem, mapped_memory);
             break;
-        case ZydisOperandType::ZYDIS_OPERAND_TYPE_POINTER:
-            // LdPtr(operands[0].ptr.segment, mapped_memory)
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_IMMEDIATE:
+            Ldi(second_operand.imm, mapped_memory);
             break;
         default:
             break;
