@@ -20,7 +20,7 @@ public:
     enum class LoadOption{ LAZY_LOAD, FULL_LOAD };
     LoadOption m_load_option{ LoadOption::LAZY_LOAD };
 private:
-    std::ifstream m_file_handle;
+    std::fstream m_file_handle;
     Win32::Architecture m_arch;
     Win32::IMAGE_NT_HEADERS32 nt_headers32{ 0 };
     Win32::IMAGE_NT_HEADERS64 nt_headers64{ 0 };
@@ -37,6 +37,7 @@ private:
     bool LoadNtHeaders();
 public:
     [[maybe_unused]] [[nodiscard]] std::uint32_t GetEntryPoint() const;
+    Result<bool, const char*> WriteToRegion(const std::uint32_t& rva, const MappedMemory& mapped_memory);
     Result<MappedMemory, const char*> LoadRegion(const std::uint32_t& rva, const std::size_t& region_size);
     static Result<std::shared_ptr<PeFile>, const char*> Load(const std::filesystem::path& p, const LoadOption& load_option);
 };
