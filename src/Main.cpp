@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string_view>
+#include <fstream>
 #include <filesystem>
 #include <functional>
 #include <vector>
@@ -59,12 +60,29 @@ Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRe
     return Ok(pairs);
 }
 
+MappedMemory LoadVirtualMachine(const std::string& path)
+{
+    std::filesystem::path p{path};
+    std::ifstream ifs(p, std::ios::binary);
+
+    const auto file_size = std::filesystem::file_size(p);
+
+    auto mapped_memory = MappedMemory::Allocate(file_size).unwrap();
+    ifs.read(std::bit_cast<char*>(mapped_memory.InnerPtr().get()), file_size);
+
+    return mapped_memory;
+}
+
 int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv) 
 {
     argparse::ArgumentParser arg_parser("Project Ignotum");
 
     arg_parser.add_argument("--path", "-p")
         .help("Path of the file to be translated")
+        .required();
+
+    arg_parser.add_argument("--vm")
+        .help("Path of the virtual machine")
         .required();
 
     arg_parser.add_argument("--block", "-b")
@@ -88,9 +106,20 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
     const auto file_path = arg_parser.get<std::string>("--path");
     const auto path_handle = ValidateFile(file_path).expect("The given file is not valid");
 
+    const auto vm_path = arg_parser.get<std::string>("--vm");
+    const auto virtual_machine = LoadVirtualMachine(vm_path);
+
     // Parse the exe file to begin the translation process
     auto pe_file = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD)
-            .expect("Failed to load the specified file");
+            .expect("Failed to load the pe file");
+
+    // Create the first region which will hold the virtual machine
+    // Write the vm to it
+    const auto ign1_region = pe_file->AddSection(".Ign1").unwrap();
+    pe_file->WriteToRegion(ign1_region.VirtualAddress, virtual_machine).unwrap();
+
+    // Create the second region which will hold all of the translated code
+    const auto ign2_region = pe_file->AddSection(".Ign2").unwrap();
 
     // Once the file was successfully loaded, we manage the specified block for translation
     const auto regions = arg_parser.get<std::vector<std::uint64_t>>("--block");
@@ -109,7 +138,13 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         const auto instruction_block = pe_file->LoadRegion(start_address, block_size)
                 .expect("The provided address could not be loaded in memory");
 
-        const auto translated_block = Translation::TranslateInstructionBlock(instruction_block);
+        const auto translated_block = Translation::TranslateInstructionBlock(instruction_block).expect("Failed to create the mapped memory");
+        pe_file->WriteToRegion(ign2_region.VirtualAddress, translated_block);
+        
+        // std::ofstream ofs("dump.bin", std::ios::binary);
+        // for(int i = 0; i < translated_block.Size(); ++i) {
+        //     ofs << (char)translated_block.InnerPtr()[i];
+        // }
     }
 
     return 0;
