@@ -53,7 +53,7 @@ namespace Translation
      * @return MappedMemory
      * A mapped memory object containing all of the translated instructions
      */
-    HOT_PATH MappedMemory TranslateInstructionBlock(const MappedMemory& instruction_block);
+    HOT_PATH Result<MappedMemory, int> TranslateInstructionBlock(const MappedMemory& instruction_block);
 }
 
 #endif
