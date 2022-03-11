@@ -32,13 +32,14 @@ std::string DebugPrintReg(const ZydisRegister& reg)
 
 HOT_PATH FORCE_INLINE void Ldr(const ZydisRegister& reg, MappedMemory& mapped_memory)
 {
+    std::puts("[DEBUG] Emitting -> LDR");
     const auto inst = Virtual::Instruction(Virtual::Parameter(static_cast<std::uint16_t>(reg)), Virtual::Command::kLdr);
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 }
 
-
 HOT_PATH FORCE_INLINE void Ldi(const ZydisDecodedOperand::ZydisDecodedOperandImm_& imm, MappedMemory& mapped_memory)
 {
+    std::puts("[DEBUG] Emitting -> LDI");
     // Construct the instruction and write it to the memory
     const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdImm);
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
@@ -61,6 +62,13 @@ HOT_PATH FORCE_INLINE void Ldi(const std::uint64_t& imm, MappedMemory& mapped_me
     mapped_memory.Write<decltype(unsigned_imm)>(unsigned_imm);
 }
 
+
+HOT_PATH FORCE_INLINE void Svr(const ZydisRegister& reg, MappedMemory& mapped_memory)
+{
+    std::puts("[DEBUG] Emitting -> SVR");
+    const auto inst = Virtual::Instruction(Virtual::Parameter(static_cast<std::uint16_t>(reg)), Virtual::Command::kVSvr);
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+}
 
 /**
  * @brief 
@@ -109,26 +117,27 @@ HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand::Zyd
         Ldi(mem.scale, mapped_memory);
 
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVMul);
-        mapped_memory.Write<Virtual::InstructionLength>(inst);
+        mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
     }
     else
     {
         Ldi(0, mapped_memory);
 
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
-        mapped_memory.Write<Virtual::InstructionLength>(inst);
+        mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
     }
 }
 
 
 HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandMem_& mem, MappedMemory& mapped_memory)
 {
+    std::puts("[DEBUG] Emitting -> LDM");
     // Unroll the memory addressing and place the value on the stack
     UnrollMemoryAddressing(mem, mapped_memory);
 
     // Load the data specified at the unrolled memory addressing
-    const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdm);
-    mapped_memory.Write<Virtual::InstructionLength>(inst);
+    auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdm);
+    mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 }
 
 
@@ -142,7 +151,7 @@ HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandMem
  * Mapped memory which will receive the virtual instructions
  * @return HOT_PATH 
  */
-HOT_PATH FORCE_INLINE void HandleGenericOperands(
+HOT_PATH FORCE_INLINE void HandleLoadGenericOperands(
     const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
     MappedMemory& mapped_memory
 )
@@ -181,15 +190,40 @@ HOT_PATH FORCE_INLINE void HandleGenericOperands(
     }
 }
 
+HOT_PATH FORCE_INLINE void HandleSaveGeneric(
+    const ZydisDecodedOperand& operand,
+    MappedMemory& mapped_memory
+)
+{
+    switch(operand.type)
+    {
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_REGISTER:
+            Svr(operand.reg.value, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
+            // std::cout << "[DEBUG]: " << DebugPrintReg(operand.mem.base) << "\n";
+            // Ldm(operand.mem, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_POINTER:
+            // LdPtr(operands[0].ptr.segment, mapped_memory)
+            break;
+        default:
+            break;
+    }
+}
+
 HOT_PATH FORCE_INLINE void SubInstLogic(
         const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
         MappedMemory& mapped_memory
 )
 {
-    HandleGenericOperands(operands, mapped_memory);
+    HandleLoadGenericOperands(operands, mapped_memory);
 
+    std::puts("[DEBUG] Emitting -> kVSUB");
     const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVSub);
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+
+    HandleSaveGeneric(operands[0], mapped_memory);
 }
 
 HOT_PATH FORCE_INLINE void AddInstLogic(
@@ -197,7 +231,7 @@ HOT_PATH FORCE_INLINE void AddInstLogic(
     MappedMemory& mapped_memory
 )
 {
-    HandleGenericOperands(operands, mapped_memory);
+    HandleLoadGenericOperands(operands, mapped_memory);
 
     const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
     mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
@@ -208,7 +242,7 @@ HOT_PATH FORCE_INLINE void MovInstLogic(
     MappedMemory& mapped_memory
 )
 {
-    HandleGenericOperands(operands, mapped_memory);
+    HandleLoadGenericOperands(operands, mapped_memory);
 
     // const auto inst = Virtual::Instruction(Parameter(Parameter::kNone))
 }
@@ -237,7 +271,7 @@ HOT_PATH FORCE_INLINE Result<bool, Translation::TranslationError> Translation::T
     return Ok(true);
 }
 
-HOT_PATH MappedMemory Translation::TranslateInstructionBlock(const MappedMemory& instruction_block)
+HOT_PATH Result<MappedMemory, int> Translation::TranslateInstructionBlock(const MappedMemory& instruction_block)
 {
     const auto inner_buffer_size = instruction_block.Size();
     const auto buffer = instruction_block.InnerPtr().get();
@@ -254,8 +288,11 @@ HOT_PATH MappedMemory Translation::TranslateInstructionBlock(const MappedMemory&
     ZydisDecodedInstruction instruction;
     ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE];
 
-    auto virtual_inst_memory = MappedMemory::Allocate(inner_buffer_size * 5)
-            .expect("Failed to allocate a buffer for the virtual instructions");
+    const auto virtual_memory_result = MappedMemory::Allocate(inner_buffer_size * 12);
+    if(virtual_memory_result.isErr())
+        return Err(-1);
+
+    auto virtual_memory = virtual_memory_result.unwrap();
 
     while (ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, buffer + offset, inner_buffer_size - offset,
         &instruction, operands, ZYDIS_MAX_OPERAND_COUNT_VISIBLE, 
@@ -270,7 +307,7 @@ HOT_PATH MappedMemory Translation::TranslateInstructionBlock(const MappedMemory&
         const auto translation_result = Translation::TranslateInstruction(
             instruction,
             operands,
-            virtual_inst_memory
+            virtual_memory
         );
 
         if(translation_result.isErr())
@@ -286,5 +323,10 @@ HOT_PATH MappedMemory Translation::TranslateInstructionBlock(const MappedMemory&
         offset += instruction.length;
     }
 
-    return virtual_inst_memory;
+    // Generate instruction to notify the virtual machine that the execution is over.
+    // The machine should restore everything and return to the caller
+    const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit);
+    virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction());
+
+    return Ok(virtual_memory);
 }
