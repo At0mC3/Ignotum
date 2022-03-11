@@ -18,7 +18,9 @@ namespace Virtual
         kVSub,
         kVMul,
         kVSvr,
-        kVSvm
+        kVSvm,
+
+        kVmExit
     };
 
     enum class RegisterMap : std::uint8_t
