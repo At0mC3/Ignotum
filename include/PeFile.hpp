@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <string_view>
 
 #include <Win32.hpp>
 #include <result.h>
@@ -22,6 +23,7 @@ public:
 private:
     std::fstream m_file_handle;
     Win32::Architecture m_arch;
+    std::uintmax_t m_nt_headers_offset{ 0 };
     Win32::IMAGE_NT_HEADERS32 nt_headers32{ 0 };
     Win32::IMAGE_NT_HEADERS64 nt_headers64{ 0 };
     std::unordered_map<std::string, Win32::IMAGE_SECTION_HEADER> m_sections_map;
@@ -39,6 +41,7 @@ public:
     [[maybe_unused]] [[nodiscard]] std::uint32_t GetEntryPoint() const;
     Result<bool, const char*> WriteToRegion(const std::uint32_t& rva, const MappedMemory& mapped_memory);
     Result<MappedMemory, const char*> LoadRegion(const std::uint32_t& rva, const std::size_t& region_size);
+    Result<Win32::IMAGE_SECTION_HEADER, const char*> AddSection(const std::string_view& section_name);
     static Result<std::shared_ptr<PeFile>, const char*> Load(const std::filesystem::path& p, const LoadOption& load_option);
 };
 

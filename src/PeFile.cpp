@@ -310,6 +310,95 @@ Result<MappedMemory, const char*> PeFile::LoadRegion(const std::uint32_t& rva, c
     return Ok(memory_buffer);
 }
 
+Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::string_view& section_name)
+{
+    std::uintmax_t nt_headers_size = [&]() -> std::uintmax_t {
+        if(m_arch == Win32::Architecture::AMD64)
+            return sizeof(Win32::IMAGE_NT_HEADERS64);
+        else if(m_arch == Win32::Architecture::I386)
+            return sizeof(Win32::IMAGE_NT_HEADERS32);
+        else 
+            return 0;
+    }();
+
+    // Go at the end of the nt headers
+    m_file_handle.seekg(m_nt_headers_offset + nt_headers_size);
+
+    auto section_count = [&]() -> Win32::WORD {
+        if(m_arch == Win32::Architecture::AMD64)
+            return nt_headers64.FileHeader.NumberOfSections;
+        else if(m_arch == Win32::Architecture::I386)
+            return nt_headers32.FileHeader.NumberOfSections;
+        else 
+            return 0;
+    }();
+
+    // Seek to the end of the image section headers - 1. Which will get us the previous section
+    m_file_handle.seekg(sizeof(Win32::IMAGE_SECTION_HEADER) * (section_count - 1), std::ios_base::cur);
+
+    // Init the struct and read into it
+    Win32::IMAGE_SECTION_HEADER previous_section{ 0 };
+    m_file_handle.read(std::bit_cast<char*>(&previous_section), sizeof(Win32::IMAGE_SECTION_HEADER));
+
+    std::cout << previous_section.Name << std::endl;
+
+    // Go at the end of the nt headers
+    m_file_handle.seekg(m_nt_headers_offset + nt_headers_size);
+    m_file_handle.seekg(sizeof(Win32::IMAGE_SECTION_HEADER) * section_count, std::ios_base::cur);
+
+    // After reading the last section, the cursor is now at the place of the new section
+    Win32::IMAGE_SECTION_HEADER new_section{ 0 };
+
+    // Set the pointer for the new section
+    new_section.PointerToRawData = previous_section.PointerToRawData + previous_section.SizeOfRawData;
+
+    // Size of the new section
+    new_section.SizeOfRawData = 0x400;
+
+    // The virtual address for the new section and the virtual size
+    new_section.VirtualAddress = previous_section.VirtualAddress + 0x1000;
+    new_section.Misc.VirtualSize = 0x200;
+
+    new_section.Characteristics = 0x60000020;
+
+    std::memcpy(&new_section.Name, section_name.data(), section_name.length());
+
+    // Write the structure in the file
+    m_file_handle.write(std::bit_cast<char*>(&new_section), sizeof(Win32::IMAGE_SECTION_HEADER));
+
+    // Go at the start of the nt headers
+    m_file_handle.seekg(m_nt_headers_offset, std::ios_base::beg);
+
+    switch(m_arch)
+    {
+        case Win32::Architecture::AMD64:
+            nt_headers64.FileHeader.NumberOfSections += 1;
+            nt_headers64.OptionalHeader64.SizeOfImage += 0x400;
+            break;
+        case Win32::Architecture::I386:
+            nt_headers32.FileHeader.NumberOfSections += 1;
+            nt_headers32.OptionalHeader32.SizeOfImage += 0x400;
+            break;
+        default:
+            break;
+    }
+
+    // Write the modified nt header to add the new section to the file
+    m_file_handle.write(std::bit_cast<char*>(&nt_headers64), nt_headers_size);
+
+    // Go to the end of the file
+    m_file_handle.seekg(0, std::ios_base::end);
+
+    // Expand the size of the file by writing null bytes
+    for(std::uintmax_t i = 0; i < new_section.SizeOfRawData; ++i){
+        m_file_handle << '\x00';
+    }
+
+    m_sections_map[std::string(section_name)] = new_section;
+
+    return Ok(new_section);
+}
+
 /**
  * @brief 
  * Loads the file at the specified path. The file is not fully loaded in memory but rather
@@ -352,6 +441,9 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     pe->m_file_handle.seekg(e_lfanew);
 
     // The cursor is now in the nt headers section of the file
+
+    // Set the offset to the nt headers
+    pe->m_nt_headers_offset = e_lfanew;
 
     // A check is needed to see if the smallest version of nt headers can fit in the remaining space
     // The 32 bit and 64 bit version are identical except the entry point field is either 32 or 64 bits
