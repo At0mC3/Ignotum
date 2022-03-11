@@ -13,12 +13,17 @@ include_directories("include")
 include_directories("${CMAKE_SOURCE_DIR}/deps/argparse/include")
 include_directories("${CMAKE_SOURCE_DIR}/deps/result")
 
-add_executable(Ignotum 
-    src/Main.cpp
-    src/PeFile.cpp
-    src/Translation.cpp
-    src/Virtual.cpp
-        src/MappedMemory.cpp
-        include/Parameter.hpp src/Parameter.cpp deps/result/result.h)
+set(SOURCE src/PeFile.cpp src/Translation.cpp src/Virtual.cpp src/MappedMemory.cpp include/Parameter.hpp src/Parameter.cpp deps/result/result.h)
+
+if(${LibMode} STREQUAL "False")
+    add_executable(Ignotum
+        src/Main.cpp
+        ${SOURCE})
+else()
+    message("Library mode enabled. Lib.cpp will be used as the entry point")
+    add_library(Ignotum SHARED 
+        src/Lib.cpp
+        ${SOURCE})
+endif()
 
 target_link_libraries(Ignotum PRIVATE "Zydis")
