@@ -26,8 +26,8 @@ public:
     [[nodiscard]] std::uintmax_t Size() const { return m_size; }
     [[nodiscard]] std::uintmax_t CursorPos() const { return m_cursor_i; }
 public:
-    template<class T, class P>
-    [[nodiscard]] bool Write(P value) 
+    template<class T>
+    [[nodiscard]] bool Write(T value) 
     {
         if(m_size - m_cursor_i < sizeof(value))
             return false;
