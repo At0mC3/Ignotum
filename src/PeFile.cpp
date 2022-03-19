@@ -369,15 +369,19 @@ Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::s
     // Go at the start of the nt headers
     m_file_handle.seekg(m_nt_headers_offset, std::ios_base::beg);
 
+    const auto image_size = new_section.VirtualAddress - previous_section.VirtualAddress + new_section.Misc.VirtualSize;
+
     switch(m_arch)
     {
         case Win32::Architecture::AMD64:
             nt_headers64.FileHeader.NumberOfSections += 1;
             nt_headers64.OptionalHeader64.SizeOfImage += 0x400;
+            nt_headers64.OptionalHeader64.SizeOfImage += image_size;
             break;
         case Win32::Architecture::I386:
             nt_headers32.FileHeader.NumberOfSections += 1;
             nt_headers32.OptionalHeader32.SizeOfImage += 0x400;
+            nt_headers32.OptionalHeader32.SizeOfImage += image_size;
             break;
         default:
             break;
@@ -412,7 +416,7 @@ Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::s
 Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem::path& path, const LoadOption& load_option)
 {
     const auto file_size = std::filesystem::file_size(path);
-    if(file_size < sizeof(Win32::IMAGE_DOS_HEADER))
+    if(file_size < sizeof(Win32::IMAGE_DOS_HEADER) + sizeof(Win32::IMAGE_NT_HEADERS32))
         return Err("File size invalid");
     
     // Create the struct and create the handle to the file using the open function.
