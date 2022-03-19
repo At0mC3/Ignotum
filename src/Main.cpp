@@ -10,12 +10,19 @@
 #include <Translation.hpp>
 #include <Virtual.hpp>
 #include <MappedMemory.hpp>
+#include <Assembler.hpp>
 
 #include <result.h>
 #include <Zydis/Zydis.h>
 #include <argparse/argparse.hpp>
 
 #define DEBUG
+
+inline void Panic(const char* msg)
+{
+    std::puts(msg);
+    std::exit(-1);
+}
 
 /**
  * @brief In charge of validating a given path. It will check if exists.
@@ -135,16 +142,26 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         std::cout << std::hex << "Block size: " << block_size << "\n" << "Start address: " << start_address << "\n";
 #endif
         // Load that section of the file in memory to start going over the instructions
-        const auto instruction_block = pe_file->LoadRegion(start_address, block_size)
+        auto instruction_block = pe_file->LoadRegion(start_address, block_size)
                 .expect("The provided address could not be loaded in memory");
 
         const auto translated_block = Translation::TranslateInstructionBlock(instruction_block).expect("Failed to create the mapped memory");
         pe_file->WriteToRegion(ign2_region.VirtualAddress, translated_block);
-        
-        // std::ofstream ofs("dump.bin", std::ios::binary);
-        // for(int i = 0; i < translated_block.Size(); ++i) {
-        //     ofs << (char)translated_block.InnerPtr()[i];
-        // }
+
+        // Write the patched instructions to the buffer to patch the region
+        const auto section_offset = ign2_region.VirtualAddress - ign1_region.VirtualAddress;
+        if(!X64::Generator::PushX32(instruction_block, section_offset))
+            Panic("The buffer is too small to call the virtual machine");
+
+        const auto call_offset = ign1_region.VirtualAddress - (pair.first + instruction_block.CursorPos());
+        if(!X64::Generator::CallNear(instruction_block, call_offset))
+            Panic("The buffer is too small to call the virtual machine");
+
+        const auto size_remaining = instruction_block.Size() - instruction_block.CursorPos();
+        std::memset(instruction_block.InnerPtr().get() + instruction_block.CursorPos(), '\x90', size_remaining);
+
+        // Write the new buffer to patch them to call the virtual machine
+        pe_file->WriteToRegion(pair.first, instruction_block);
     }
 
     return 0;

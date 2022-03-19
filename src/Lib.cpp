@@ -1,8 +1,11 @@
 #include <filesystem>
 #include <string_view>
+#include <cstdint>
+#include <iostream>
 
 #include <Translation.hpp>
 #include <PeFile.hpp>
+#include <Assembler.hpp>
 #include <result.h>
 
 #ifdef _WIN32
@@ -22,12 +25,23 @@ __attribute__((packed));
 struct Query 
 {
      const char* file_path; // Path of the file to be translated
-     size_t* regions; // Array of address to find the code to be translated
-     size_t regions_length; // Size of the array
+     const char* vm_path; // Path to the virtual machine
+     size_t region; // Array of address to find the code to be translated
+     size_t region_size; // Size of the array
 };
 #ifdef _WIN32
 #pragma pack(pop)
 #endif
+
+enum class ObfuscateResult : std::uint32_t
+{
+    kSuccess,
+    kInvalidPath,
+    kInvalidFile,
+    kVmNotFound,
+    kBufferTooSmall,
+    kInvalidFunctionAddress
+};
 
 /**
  * @brief In charge of validating a given path. It will check if exists.
@@ -50,70 +64,86 @@ Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& 
     return Ok(p);
 }
 
-/**
- * @brief Given a vector of n amount of size_t, this function check if the size of it is big enough for pairs
- * by using modulo. If the format is correct, they are then but in pairs to make them more readable when processing
- * 
- * @param vec The vector containing all of the addresses and the size of them
- * @return Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*>
- * A vector of pair is returned is it was successful, otherwise, an error message is returned 
- */
-Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRegions(const size_t* regions, const size_t& size)
+
+Result<MappedMemory, int> LoadVirtualMachine(const char* path)
 {
-    if(size % 2 != 0)
-        return Err("The format of the regions is invalid");
+    std::filesystem::path p{path};
+    std::ifstream ifs(p, std::ios::binary);
+    if(!ifs.is_open())
+        return Err(0);
 
-    std::vector<std::pair<std::size_t, std::size_t>> pairs;
-    for(auto i = 0; i < size - 1; i += 2)
-    {
-        pairs.emplace_back(std::make_pair(regions[i], regions[i+1]));
-    }
+    const auto file_size = std::filesystem::file_size(p);
 
-    return Ok(pairs);
+    auto mapped_memory = MappedMemory::Allocate(file_size).unwrap();
+    ifs.read(std::bit_cast<char*>(mapped_memory.InnerPtr().get()), file_size);
+
+    return Ok(mapped_memory);
 }
 
-extern "C" DllExport int Obfuscate(const Query& query)
+extern "C" DllExport ObfuscateResult Obfuscate(const Query* query)
 {
-    const auto file_path = std::string_view(query.file_path);
+    const auto file_path = std::string_view(query->file_path);
     const auto validate_path_res = ValidateFile(file_path);
     if(validate_path_res.isErr())
-        return -1;
+        return ObfuscateResult::kInvalidPath;
 
     const auto path_handle = validate_path_res.unwrap();
 
     // Parse the exe file to begin the translation process
     const auto pe_file_res = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD);
     if(pe_file_res.isErr())
-        return -1;
+        return ObfuscateResult::kInvalidFile;
 
     auto pe_file = pe_file_res.unwrap();
 
-    pe_file->AddSection(".vm");
+    const auto virtual_machine_res = LoadVirtualMachine(query->vm_path);
+    if(virtual_machine_res.isErr())
+        return ObfuscateResult::kVmNotFound;
 
-    const auto region_pairs_result = ValidateRegions(query.regions, query.regions_length);
-    if(region_pairs_result.isErr())
-        return -1;
+    const auto virtual_machine = virtual_machine_res.unwrap();
 
-    const auto region_pairs = region_pairs_result.unwrap();
+    // Create the first region which will hold the virtual machine
+    // Write the vm to it
+    const auto ign1_region = pe_file->AddSection(".Ign1").unwrap();
+    pe_file->WriteToRegion(ign1_region.VirtualAddress, virtual_machine).unwrap();
 
-    // Go over every region specified to translated them
-    for(const auto& pair : region_pairs)
-    {
-        const auto block_size = pair.second;
-        const auto start_address = pair.first;
+    // Create the second region which will hold all of the translated code
+    const auto ign2_region = pe_file->AddSection(".Ign2").unwrap();
 
-#ifdef DEBUG    
-        std::cout << std::hex << "Block size: " << block_size << "\n" << "Start address: " << start_address << "\n";
-#endif
-        // Load that section of the file in memory to start going over the instructions
-        const auto instruction_block_res = pe_file->LoadRegion(start_address, block_size);
-        if(instruction_block_res.isErr())
-            return -1;
+    // Go over the region specified to translate them
+    const auto block_size = query->region_size;
+    const auto start_address = query->region;
 
-        const auto instruction_block = instruction_block_res.unwrap();
+    // Load that section of the file in memory to start going over the instructions
+    const auto instruction_block_res = pe_file->LoadRegion(start_address, block_size);
+    if(instruction_block_res.isErr())
+        return ObfuscateResult::kInvalidFunctionAddress;
 
-        const auto translated_block = Translation::TranslateInstructionBlock(instruction_block);
-    }
+    auto instruction_block = instruction_block_res.unwrap();
 
-    return 0;
+    // Translated the block and then write it in it's region block which is 'Ign2'
+    const auto translated_block = Translation::TranslateInstructionBlock(instruction_block).expect("Failed to create the mapped memory");
+    pe_file->WriteToRegion(ign2_region.VirtualAddress, translated_block);
+
+    // Calculate the offset of the virtual block relative to the start address of the virtual machine
+    // Then, generate the instruction to push it on the stack
+    const auto section_offset = ign2_region.VirtualAddress - ign1_region.VirtualAddress;
+    if(!X64::Generator::PushX32(instruction_block, section_offset))
+        return ObfuscateResult::kBufferTooSmall;
+
+    // Calculate the offset of the virtual machine entry relative to the function we're in right now
+    // Then, generate the instruction to call that relative offset
+    const auto call_offset = ign1_region.VirtualAddress - (start_address + instruction_block.CursorPos());
+    if(!X64::Generator::CallNear(instruction_block, call_offset))
+        return ObfuscateResult::kBufferTooSmall;
+
+    // Fill the rest of the function with NOP instructions for now.
+    // A mutation engine should be created in the future to put valid instructions
+    const auto size_remaining = instruction_block.Size() - instruction_block.CursorPos();
+    std::memset(instruction_block.InnerPtr().get() + instruction_block.CursorPos(), '\x90', size_remaining);
+
+    // Write back the original patched function
+    pe_file->WriteToRegion(start_address, instruction_block);
+
+    return ObfuscateResult::kSuccess;
 }
