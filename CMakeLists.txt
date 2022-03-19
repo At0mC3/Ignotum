@@ -13,7 +13,14 @@ include_directories("include")
 include_directories("${CMAKE_SOURCE_DIR}/deps/argparse/include")
 include_directories("${CMAKE_SOURCE_DIR}/deps/result")
 
-set(SOURCE src/PeFile.cpp src/Translation.cpp src/Virtual.cpp src/MappedMemory.cpp include/Parameter.hpp src/Parameter.cpp deps/result/result.h)
+set(SOURCE src/PeFile.cpp 
+            src/Assembler.cpp
+            src/Translation.cpp 
+            src/Virtual.cpp 
+            src/MappedMemory.cpp 
+            include/Parameter.hpp 
+            src/Parameter.cpp 
+            deps/result/result.h)
 
 if(${LibMode} STREQUAL "False")
     add_executable(Ignotum
