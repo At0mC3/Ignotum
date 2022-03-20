@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 #include <utility>
+#include <cstring>
 
 #include <PeFile.hpp>
 #include <Translation.hpp>

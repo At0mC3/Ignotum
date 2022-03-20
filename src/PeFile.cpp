@@ -1,5 +1,6 @@
 #include <PeFile.hpp>
 
+#include <cstring>
 #include <iostream>
 #include <bit>
 
@@ -438,7 +439,7 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
         return Err("File size invalid");
     
     // e_lfanew points to somewhere in the file and the file needs to match the size where that would be
-    if(file_size < e_lfanew)
+    if(file_size - sizeof(Win32::IMAGE_DOS_HEADER) - sizeof(Win32::IMAGE_DOS_STUB) < e_lfanew)
         return Err("File size invalid");
     
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
