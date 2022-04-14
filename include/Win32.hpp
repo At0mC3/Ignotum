@@ -217,6 +217,13 @@ namespace Win32
         IMAGE_OPTIONAL_HEADER64 OptionalHeader64;
     };
 
+    // This struct is not part of the PE format
+    // It was created to bridge the 64 and 32 bit nt_headers
+    struct IMAGE_NT_HEADERS_HYBRID {
+        DWORD                Signature;
+        IMAGE_FILE_HEADER     FileHeader;
+    };
+
 }
 
 
