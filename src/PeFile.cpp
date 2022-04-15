@@ -12,7 +12,7 @@
  * @param rva Relative virtual address to be converted
  * @return std::uint32_t The raw address. IF 0 then it was not found
  */
-std::uint32_t PeFile::RvaToRaw(const std::uint32_t& rva)
+std::uint32_t PeFile::RvaToRaw(const std::uint32_t& rva) const
 {
     // Iterate over all of the sections and check if the given value is
     // within the range of the section. If yes, convert it to a memory region address
@@ -33,7 +33,7 @@ std::uint32_t PeFile::RvaToRaw(const std::uint32_t& rva)
  * @return std::optional<Win32::IMAGE_DATA_DIRECTORY> 
  * The requested structure or nullopt
  */
-std::optional<Win32::IMAGE_DATA_DIRECTORY> PeFile::GetImportDirectory()
+std::optional<Win32::IMAGE_DATA_DIRECTORY> PeFile::GetImportDirectory() const
 {
     if(m_arch == Win32::Architecture::AMD64)
         return nt_headers64.OptionalHeader64.DataDirectory[Win32::Definitions::IMAGE_DIRECTORY_ENTRY_IMPORT];
@@ -184,13 +184,9 @@ bool PeFile::LoadImports()
  * @return true All of the sections were mapped successfully
  * @return false Bad data cause the mapping to fail
  */
-void PeFile::LoadSections()
+bool PeFile::LoadSections()
 {
-    std::uint16_t section_count = 0;
-    if(m_arch == Win32::Architecture::AMD64)
-        section_count = nt_headers64.FileHeader.NumberOfSections;
-    else if(m_arch == Win32::Architecture::I386)
-        section_count = nt_headers32.FileHeader.NumberOfSections;
+    std::uint16_t section_count = nt_headers_hybrid->FileHeader.NumberOfSections;
 
     for(std::uint16_t i = 0; i < section_count; ++i)
     {
@@ -200,14 +196,14 @@ void PeFile::LoadSections()
         // Verify if any data is invalid
         if(section.PointerToRawData == 0)
             continue;
-        if(section.PointerToRawData == 0)
-            continue;
 
         char* name = std::bit_cast<char*>(&section.Name);
 
         if(m_sections_map.find(name) == m_sections_map.end())
             m_sections_map[name] = section;
     }
+
+    return true;
 }
 
 /**
@@ -222,9 +218,11 @@ bool PeFile::LoadNtHeaders()
     {
         case Win32::Architecture::AMD64:
             m_file_handle.read(std::bit_cast<char *>(&nt_headers64), sizeof(nt_headers64));
+            nt_headers_hybrid = std::bit_cast<Win32::IMAGE_NT_HEADERS_HYBRID*>(&nt_headers64);
             break;
         case Win32::Architecture::I386:
             m_file_handle.read(std::bit_cast<char *>(&nt_headers32), sizeof(nt_headers32));
+            nt_headers_hybrid = std::bit_cast<Win32::IMAGE_NT_HEADERS_HYBRID*>(&nt_headers32);
             break;
         case Win32::Architecture::NOT_SUPPORTED:
             return false;
@@ -255,7 +253,7 @@ Win32::Architecture PeFile::FindArchitecture(PeFile &pe)
     return static_cast<Win32::Architecture>(nt_machine);
 }
 
-[[maybe_unused]] std::uint32_t PeFile::GetEntryPoint() const
+std::uint32_t PeFile::GetEntryPoint() const
 {
     switch(m_arch)
     {
@@ -325,14 +323,7 @@ Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::s
     // Go at the end of the nt headers
     m_file_handle.seekg(m_nt_headers_offset + nt_headers_size);
 
-    auto section_count = [&]() -> Win32::WORD {
-        if(m_arch == Win32::Architecture::AMD64)
-            return nt_headers64.FileHeader.NumberOfSections;
-        else if(m_arch == Win32::Architecture::I386)
-            return nt_headers32.FileHeader.NumberOfSections;
-        else 
-            return 0;
-    }();
+    auto section_count = nt_headers_hybrid->FileHeader.NumberOfSections;
 
     // Seek to the end of the image section headers - 1. Which will get us the previous section
     m_file_handle.seekg(sizeof(Win32::IMAGE_SECTION_HEADER) * (section_count - 1), std::ios_base::cur);
@@ -457,26 +448,22 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     
     pe->m_arch = FindArchitecture(*pe);
     
-    auto nt_section_size = 0;
-    switch(pe->m_arch)
-    {
-        case Win32::Architecture::AMD64:
+    auto nt_section_size = [&]() {
+        switch(pe->m_arch)
         {
-            if(file_size - e_lfanew < sizeof(Win32::IMAGE_NT_HEADERS64))
-                return Err("File size invalid");
-            nt_section_size = sizeof(Win32::IMAGE_NT_HEADERS64);
-            break;
-        }
-        case Win32::Architecture::I386:
-        {
-            if(file_size - e_lfanew < sizeof(Win32::IMAGE_NT_HEADERS32))
-                return Err("File size invalid");
-            nt_section_size = sizeof(Win32::IMAGE_NT_HEADERS32);
-            break;
-        }
-        case Win32::Architecture::NOT_SUPPORTED:
-            break;
-    };
+            case Win32::Architecture::AMD64:
+                return sizeof(Win32::IMAGE_NT_HEADERS64);
+            case Win32::Architecture::I386:
+                return sizeof(Win32::IMAGE_NT_HEADERS32);
+            case Win32::Architecture::NOT_SUPPORTED:
+                return 0Ui64;
+            default:
+                return 0Ui64;
+        };
+    }();
+
+    if(nt_section_size == 0)
+        return Err("Invalid NT Header size");
 
     if(file_size - e_lfanew < nt_section_size)
         return Err("File size invalid");
