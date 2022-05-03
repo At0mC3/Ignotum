@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <string_view>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 
 #include <Translation.hpp>
@@ -70,11 +71,15 @@ Result<MappedMemory, int> LoadVirtualMachine(const char* path)
     std::filesystem::path p{path};
     std::ifstream ifs(p, std::ios::binary);
     if(!ifs.is_open())
-        return Err(0);
+        return Err(-1);
 
     const auto file_size = std::filesystem::file_size(p);
 
-    auto mapped_memory = MappedMemory::Allocate(file_size).unwrap();
+    auto mapped_memory_res = MappedMemory::Allocate(file_size);
+    if(mapped_memory_res.isErr())
+        return Err(-1);
+
+    const auto mapped_memory = mapped_memory_res.unwrap();
     ifs.read(std::bit_cast<char*>(mapped_memory.InnerPtr().get()), file_size);
 
     return Ok(mapped_memory);
@@ -87,7 +92,11 @@ extern "C" DllExport ObfuscateResult Obfuscate(const Query* query)
     if(validate_path_res.isErr())
         return ObfuscateResult::kInvalidPath;
 
-    const auto path_handle = validate_path_res.unwrap();
+    const auto path_handle_res = validate_path_res;
+    if(path_handle_res.isErr())
+        return ObfuscateResult::kInvalidPath;
+
+    const auto path_handle = path_handle_res.unwrap();
 
     // Parse the exe file to begin the translation process
     const auto pe_file_res = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD);
@@ -104,11 +113,19 @@ extern "C" DllExport ObfuscateResult Obfuscate(const Query* query)
 
     // Create the first region which will hold the virtual machine
     // Write the vm to it
-    const auto ign1_region = pe_file->AddSection(".Ign1").unwrap();
+    const auto ign1_region_res = pe_file->AddSection(".Ign1");
+    if(ign1_region_res.isErr())
+        return ObfuscateResult::kInvalidFile;
+
+    const auto ign1_region = ign1_region_res.unwrap();
     pe_file->WriteToRegion(ign1_region.VirtualAddress, virtual_machine).unwrap();
 
     // Create the second region which will hold all of the translated code
-    const auto ign2_region = pe_file->AddSection(".Ign2").unwrap();
+    const auto ign2_region_res = pe_file->AddSection(".Ign2");
+    if(ign2_region_res.isErr())
+        return ObfuscateResult::kInvalidFile;
+
+    const auto ign2_region = ign2_region_res.unwrap();
 
     // Go over the region specified to translate them
     const auto block_size = query->region_size;
@@ -122,7 +139,12 @@ extern "C" DllExport ObfuscateResult Obfuscate(const Query* query)
     auto instruction_block = instruction_block_res.unwrap();
 
     // Translated the block and then write it in it's region block which is 'Ign2'
-    const auto translated_block = Translation::TranslateInstructionBlock(instruction_block).expect("Failed to create the mapped memory");
+    const auto translated_block_res = Translation::TranslateInstructionBlock(instruction_block);
+    if(translated_block_res.isErr())
+        return ObfuscateResult::kInvalidFunctionAddress;
+        
+
+    const auto translated_block = translated_block_res.unwrap();
     pe_file->WriteToRegion(ign2_region.VirtualAddress, translated_block);
 
     // Calculate the offset of the virtual block relative to the start address of the virtual machine
