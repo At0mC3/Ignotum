@@ -448,7 +448,7 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     
     pe->m_arch = FindArchitecture(*pe);
     
-    auto nt_section_size = [&]() {
+    auto nt_section_size = [&]() -> std::uint64_t {
         switch(pe->m_arch)
         {
             case Win32::Architecture::AMD64:
@@ -456,9 +456,9 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
             case Win32::Architecture::I386:
                 return sizeof(Win32::IMAGE_NT_HEADERS32);
             case Win32::Architecture::NOT_SUPPORTED:
-                return 0Ui64;
+                return 0;
             default:
-                return 0Ui64;
+                return 0;
         };
     }();
 
