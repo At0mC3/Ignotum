@@ -22,6 +22,8 @@ set(SOURCE src/PeFile.cpp
             src/Parameter.cpp 
             deps/result/result.h)
 
+find_package(spdlog REQUIRED)
+
 if(${LibMode} STREQUAL "False")
     add_executable(Ignotum
         src/Main.cpp
@@ -34,3 +36,4 @@ else()
 endif()
 
 target_link_libraries(Ignotum PRIVATE "Zydis")
+target_link_libraries(Ignotum PRIVATE spdlog::spdlog)

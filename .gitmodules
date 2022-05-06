@@ -7,3 +7,6 @@
 [submodule "deps/result"]
 	path = deps/result
 	url = https://github.com/At0mC3/result.git
+[submodule "deps/spdlog"]
+	path = deps/spdlog
+	url = https://github.com/gabime/spdlog.git
