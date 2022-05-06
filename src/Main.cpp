@@ -68,9 +68,12 @@ Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRe
     return Ok(pairs);
 }
 
-MappedMemory LoadVirtualMachine(const std::string& path)
+std::optional<MappedMemory> LoadVirtualMachine(const std::string& path)
 {
     std::filesystem::path p{path};
+    if(!std::filesystem::exists(p) && !std::filesystem::is_regular_file(p))
+        return {};
+
     std::ifstream ifs(p, std::ios::binary);
 
     const auto file_size = std::filesystem::file_size(p);
@@ -115,7 +118,12 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
     const auto path_handle = ValidateFile(file_path).expect("The given file is not valid");
 
     const auto vm_path = arg_parser.get<std::string>("--vm");
-    const auto virtual_machine = LoadVirtualMachine(vm_path);
+    const auto virtual_machine_res = LoadVirtualMachine(vm_path);
+    if(!virtual_machine_res) {
+        Panic("The path for the virtual machine is invalid");
+    }
+
+    const auto virtual_machine = *virtual_machine_res;
 
     // Parse the exe file to begin the translation process
     auto pe_file = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD)
