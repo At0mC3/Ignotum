@@ -332,8 +332,6 @@ Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::s
     Win32::IMAGE_SECTION_HEADER previous_section{ 0 };
     m_file_handle.read(std::bit_cast<char*>(&previous_section), sizeof(Win32::IMAGE_SECTION_HEADER));
 
-    std::cout << previous_section.Name << std::endl;
-
     // Go at the end of the nt headers
     m_file_handle.seekg(m_nt_headers_offset + nt_headers_size);
     m_file_handle.seekg(sizeof(Win32::IMAGE_SECTION_HEADER) * section_count, std::ios_base::cur);
@@ -419,6 +417,12 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     pe->m_file_handle.open(path, std::ios::in | std::ios::out | std::ios::binary);
     if(!pe->m_file_handle.is_open())
         return Err("Could not open the file");
+
+    std::uint16_t header_signature{0};
+    pe->m_file_handle.read(std::bit_cast<char*>(&header_signature), sizeof(header_signature));
+
+    if(header_signature != 0x5A4D)
+        return Err("Invalid sigature");
 
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
     pe->m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4);
