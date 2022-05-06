@@ -1,8 +1,15 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED True)
 
 project(Ignotum)
+
+if(CMAKE_CXX_BYTE_ORDER STREQUAL "LITTLE_ENDIAN")
+    message("[INFO]: System is LITTLE ENDIAN")
+    add_compile_definitions(LITTLE_ENDIAN=1)
+else()
+    message("[INFO]: System is BIG ENDIAN")
+endif()
 
 # Register Zydis dependency.
 # Disable build of tools and examples.
