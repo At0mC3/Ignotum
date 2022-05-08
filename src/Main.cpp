@@ -131,11 +131,20 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 
     // Create the first region which will hold the virtual machine
     // Write the vm to it
-    const auto ign1_region = pe_file->AddSection(".Ign1").unwrap();
+    const auto ign1_region_res = pe_file->AddSection(".Ign1");
+    if(!ign1_region_res) {
+        Panic("Failed to add the first region for the virtual machine");
+    }
+
+    const auto ign1_region = *ign1_region_res;
     pe_file->WriteToRegion(ign1_region.VirtualAddress, virtual_machine).unwrap();
 
     // Create the second region which will hold all of the translated code
-    const auto ign2_region = pe_file->AddSection(".Ign2").unwrap();
+    const auto ign2_region_res = pe_file->AddSection(".Ign2");
+    if(!ign2_region_res) {
+        Panic("Failed to add the second region for the virtualized code");
+    }
+    const auto ign2_region = *ign2_region_res;
 
     // Once the file was successfully loaded, we manage the specified block for translation
     const auto regions = arg_parser.get<std::vector<std::uint64_t>>("--block");
