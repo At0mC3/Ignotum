@@ -66,23 +66,23 @@ Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& 
 }
 
 
-Result<MappedMemory, int> LoadVirtualMachine(const char* path)
+std::optional<MappedMemory> LoadVirtualMachine(const char* path)
 {
     std::filesystem::path p{path};
     std::ifstream ifs(p, std::ios::binary);
     if(!ifs.is_open())
-        return Err(-1);
+        return {};
 
     const auto file_size = std::filesystem::file_size(p);
 
     auto mapped_memory_res = MappedMemory::Allocate(file_size);
     if(mapped_memory_res.isErr())
-        return Err(-1);
+        return {};
 
     const auto mapped_memory = mapped_memory_res.unwrap();
     ifs.read(std::bit_cast<char*>(mapped_memory.InnerPtr().get()), file_size);
 
-    return Ok(mapped_memory);
+    return mapped_memory;
 }
 
 extern "C" DllExport ObfuscateResult Obfuscate(const Query* query)
@@ -106,10 +106,10 @@ extern "C" DllExport ObfuscateResult Obfuscate(const Query* query)
     auto pe_file = pe_file_res.unwrap();
 
     const auto virtual_machine_res = LoadVirtualMachine(query->vm_path);
-    if(virtual_machine_res.isErr())
+    if(!virtual_machine_res)
         return ObfuscateResult::kVmNotFound;
 
-    const auto virtual_machine = virtual_machine_res.unwrap();
+    const auto virtual_machine = *virtual_machine_res;
 
     // Create the first region which will hold the virtual machine
     // Write the vm to it
