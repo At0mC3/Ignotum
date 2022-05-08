@@ -42,7 +42,7 @@ public:
     [[nodiscard]] std::uint32_t GetEntryPoint() const;
     [[nodiscard]] Result<bool, const char*> WriteToRegion(const std::uint32_t& rva, const MappedMemory& mapped_memory);
     [[nodiscard]] Result<MappedMemory, const char*> LoadRegion(const std::uint32_t& rva, const std::size_t& region_size);
-    [[nodiscard]] Result<Win32::IMAGE_SECTION_HEADER, const char*> AddSection(const std::string_view& section_name);
+    [[nodiscard]] std::optional<Win32::IMAGE_SECTION_HEADER> AddSection(const std::string_view& section_name, const std::uint32_t section_size);
     static Result<std::shared_ptr<PeFile>, const char*> Load(const std::filesystem::path& p, const LoadOption& load_option);
 };
 

@@ -309,8 +309,21 @@ Result<MappedMemory, const char*> PeFile::LoadRegion(const std::uint32_t& rva, c
     return Ok(memory_buffer);
 }
 
-Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::string_view& section_name)
+std::optional<Win32::IMAGE_SECTION_HEADER> 
+PeFile::AddSection(const std::string_view& section_name, const std::uint32_t section_size)
 {
+    const auto section_alignment = [&]() -> std::uint32_t {
+        if(m_arch == Win32::Architecture::AMD64)
+            return nt_headers64.OptionalHeader64.SectionAlignment;
+        else if(m_arch == Win32::Architecture::I386)
+            return nt_headers32.OptionalHeader32.SectionAlignment;
+
+        return 0;
+    }();
+
+    if(section_size < section_alignment)
+        return {};
+
     std::uintmax_t nt_headers_size = [&]() -> std::uintmax_t {
         if(m_arch == Win32::Architecture::AMD64)
             return sizeof(Win32::IMAGE_NT_HEADERS64);
@@ -343,7 +356,7 @@ Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::s
     new_section.PointerToRawData = previous_section.PointerToRawData + previous_section.SizeOfRawData;
 
     // Size of the new section
-    new_section.SizeOfRawData = 0x400;
+    new_section.SizeOfRawData = section_size;
 
     // The virtual address for the new section and the virtual size
     new_section.VirtualAddress = previous_section.VirtualAddress + 0x1000;
@@ -390,7 +403,7 @@ Result<Win32::IMAGE_SECTION_HEADER, const char*> PeFile::AddSection(const std::s
 
     m_sections_map[std::string(section_name)] = new_section;
 
-    return Ok(new_section);
+    return new_section;
 }
 
 /**
