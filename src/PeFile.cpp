@@ -431,19 +431,21 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     if(!pe->m_file_handle.is_open())
         return Err("Could not open the file");
 
-    std::uint16_t header_signature{0};
-    pe->m_file_handle.read(std::bit_cast<char*>(&header_signature), sizeof(header_signature));
+    std::byte header_signature[2];
+    pe->m_file_handle.read(std::bit_cast<char*>(&header_signature), 2);
 
-    if(header_signature != 0x5A4D)
+    // Check if the first bytes of the file is equal to "MZ"
+    if( header_signature[0] != std::byte(0x4D) && header_signature[1] != std::byte(0x5A) )
         return Err("Invalid sigature");
 
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
-    pe->m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4);
+    // - 2 is to account for the 2 bytes we just read for the signature
+    pe->m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4 - 2);
 
     // Init the variable and read into it
     std::int32_t e_lfanew = 0;
     pe->m_file_handle.read(std::bit_cast<char*>(&e_lfanew), sizeof(std::int32_t));
-    if(e_lfanew < 0)
+    if(e_lfanew <= 0)
         return Err("File size invalid");
     
     // e_lfanew points to somewhere in the file and the file needs to match the size where that would be
