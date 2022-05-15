@@ -439,8 +439,7 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
         return Err("Invalid sigature");
 
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew
-    // - 2 is to account for the 2 bytes we just read for the signature
-    pe->m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4 - 2);
+    pe->m_file_handle.seekg(sizeof(Win32::IMAGE_DOS_HEADER) - 4);
 
     // Init the variable and read into it
     std::int32_t e_lfanew = 0;
