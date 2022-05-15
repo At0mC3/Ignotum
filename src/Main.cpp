@@ -16,6 +16,7 @@
 #include <result.h>
 #include <Zydis/Zydis.h>
 #include <argparse/argparse.hpp>
+#include <spdlog/spdlog.h>
 
 #define DEBUG
 
@@ -126,12 +127,17 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
     const auto virtual_machine = *virtual_machine_res;
 
     // Parse the exe file to begin the translation process
-    auto pe_file = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD)
-            .expect("Failed to load the pe file");
+    auto pe_file_res = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD);
+    if(pe_file_res.isErr()) {
+        spdlog::critical("Failed to load the PE file: MSG-> {}", pe_file_res.unwrapErr());
+        return -1;
+    }
+
+    auto pe_file = pe_file_res.unwrap();
 
     // Create the first region which will hold the virtual machine
     // Write the vm to it
-    const auto ign1_region_res = pe_file->AddSection(".Ign1");
+    const auto ign1_region_res = pe_file->AddSection(".Ign1", 0x1000);
     if(!ign1_region_res) {
         Panic("Failed to add the first region for the virtual machine");
     }
@@ -140,7 +146,7 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
     pe_file->WriteToRegion(ign1_region.VirtualAddress, virtual_machine).unwrap();
 
     // Create the second region which will hold all of the translated code
-    const auto ign2_region_res = pe_file->AddSection(".Ign2");
+    const auto ign2_region_res = pe_file->AddSection(".Ign2", 0x1000);
     if(!ign2_region_res) {
         Panic("Failed to add the second region for the virtualized code");
     }
@@ -157,7 +163,8 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         const auto start_address = pair.first;
 
 #ifdef DEBUG
-        std::cout << std::hex << "Block size: " << block_size << "\n" << "Start address: " << start_address << "\n";
+        spdlog::info("Start RVA: 0x{:X}", start_address);
+        spdlog::info("Block size: 0x{:X}", block_size);
 #endif
         // Load that section of the file in memory to start going over the instructions
         auto instruction_block = pe_file->LoadRegion(start_address, block_size)
