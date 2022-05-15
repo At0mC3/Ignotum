@@ -17,6 +17,7 @@
 // 3rd party Library
 #include <Zydis/Zydis.h>
 #include <result.h>
+#include <spdlog/spdlog.h>
 
 namespace Translation
 {
@@ -29,19 +30,19 @@ namespace Translation
 
     HOT_PATH FORCE_INLINE void Ldr(const ZydisRegister &reg, MappedMemory &mapped_memory)
     {
-        std::puts("[DEBUG] Emitting -> LDR");
+        spdlog::info("Emitting -> LDR");
         const auto inst = Virtual::Instruction(Virtual::Parameter(static_cast<std::uint16_t>(reg)), Virtual::Command::kLdr);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
     }
 
-    HOT_PATH FORCE_INLINE void Ldi(const ZydisDecodedOperand::ZydisDecodedOperandImm_ &imm, MappedMemory &mapped_memory)
+    HOT_PATH FORCE_INLINE void Ldi(const ZydisDecodedOperandImm &imm, MappedMemory &mapped_memory)
     {
-        std::puts("[DEBUG] Emitting -> LDI");
+        spdlog::info("Emitting -> LDI");
         // Construct the instruction and write it to the memory
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdImm);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 
-        assert(!imm.is_signed && "Signed value not supported in Ldm");
+        // assert(!imm.is_signed && "Signed value not supported in Ldm");
 
         auto unsigned_imm = imm.value.u;
         // Write the immediate in the mapped memory
@@ -50,6 +51,7 @@ namespace Translation
 
     HOT_PATH FORCE_INLINE void Ldi(const std::uint64_t &imm, MappedMemory &mapped_memory)
     {
+        spdlog::info("Emitting -> LDI");
         // Construct the instruction and write it to the memory
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdImm);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
@@ -61,7 +63,7 @@ namespace Translation
 
     HOT_PATH FORCE_INLINE void Svr(const ZydisRegister &reg, MappedMemory &mapped_memory)
     {
-        std::puts("[DEBUG] Emitting -> SVR");
+        spdlog::info("Emitting -> SVR");
         const auto inst = Virtual::Instruction(Virtual::Parameter(static_cast<std::uint16_t>(reg)), Virtual::Command::kVSvr);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
     }
@@ -81,7 +83,7 @@ namespace Translation
      * Mapped memory which will receive the virtual instructions
      * @return HOT_PATH
      */
-    HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperand::ZydisDecodedOperandMem_ &mem, MappedMemory &mapped_memory)
+    HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperandMem &mem, MappedMemory &mapped_memory)
     {
         // Load the content of the base register on the stack
         // If the operation doesn't use a base, just load 0
@@ -124,11 +126,11 @@ namespace Translation
         }
     }
 
-    HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperand::ZydisDecodedOperandMem_ &mem, MappedMemory &mapped_memory)
+    HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperandMem &mem, MappedMemory &mapped_memory)
     {
-        std::puts("[DEBUG] Emitting -> LDM");
         // Unroll the memory addressing and place the value on the stack
         UnrollMemoryAddressing(mem, mapped_memory);
+        spdlog::info("Emitting -> LDM");
 
         // Load the data specified at the unrolled memory addressing
         auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdm);
@@ -137,7 +139,7 @@ namespace Translation
 
     HOT_PATH FORCE_INLINE void Ldm(MappedMemory &mapped_memory)
     {
-        std::puts("[DEBUG] Emitting -> LDM");
+        spdlog::info("Emitting -> LDM");
         // Load the data specified at the unrolled memory addressing
         auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kLdm);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
@@ -217,7 +219,7 @@ namespace Translation
     {
         HandleLoadGenericOperands(operands, mapped_memory);
 
-        std::puts("[DEBUG] Emitting -> kVSUB");
+        spdlog::info("Emitting -> kVSUB");
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVSub);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
 
@@ -230,6 +232,7 @@ namespace Translation
     {
         HandleLoadGenericOperands(operands, mapped_memory);
 
+        spdlog::info("Emitting -> kVADD");
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
     }
