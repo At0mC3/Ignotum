@@ -89,7 +89,7 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 {
     argparse::ArgumentParser arg_parser("Project Ignotum");
 
-    arg_parser.add_argument("--path", "-p")
+    arg_parser.add_argument("--input", "-i")
         .help("Path of the file to be translated")
         .required();
 
@@ -115,7 +115,7 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         std::exit(0);
     }
 
-    const auto file_path = arg_parser.get<std::string>("--path");
+    const auto file_path = arg_parser.get<std::string>("--input");
     const auto path_handle = ValidateFile(file_path).expect("The given file is not valid");
 
     const auto vm_path = arg_parser.get<std::string>("--vm");
@@ -170,7 +170,7 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         auto instruction_block = pe_file->LoadRegion(start_address, block_size)
                 .expect("The provided address could not be loaded in memory");
 
-        const auto translated_block = Translation::TranslateInstructionBlock(instruction_block).expect("Failed to create the mapped memory");
+        const auto translated_block = Translation::TranslateInstructionBlock(instruction_block).unwrap();
         pe_file->WriteToRegion(ign2_region.VirtualAddress, translated_block);
 
         // Write the patched instructions to the buffer to patch the region
