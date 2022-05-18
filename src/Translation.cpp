@@ -19,8 +19,8 @@ HOT_PATH FORCE_INLINE Result<bool, Translation::TranslationError> Translation::T
         case ZydisMnemonic::ZYDIS_MNEMONIC_MOV:
             MovInstLogic(operands, mapped_memory);
             break;
-        default:
-            return Err(TranslationError::INSTRUCTION_NOT_FOUND);
+        default: // Instruction was not found
+            break;
     }
     
     return Ok(true);
@@ -57,7 +57,9 @@ HOT_PATH Result<MappedMemory, int> Translation::TranslateInstructionBlock(const 
         char text_buffer[256] = { 0 };
         ZydisFormatterFormatInstruction(&formatter, &instruction, operands,
             instruction.operand_count_visible, text_buffer, sizeof(text_buffer), 0);
-        // std::puts(text_buffer);
+
+        spdlog::info("---------------");
+        spdlog::info("{}", text_buffer);
 
         const auto translation_result = Translation::TranslateInstruction(
             instruction,
@@ -67,15 +69,29 @@ HOT_PATH Result<MappedMemory, int> Translation::TranslateInstructionBlock(const 
 
         if(translation_result.isErr())
         {
-            std::cout << "[UNSUPPORTED]: " << text_buffer << "\n";
-        }
-        else
-        {
-            std::cout << "[SUPPORTED]: " << text_buffer << "\n";
-        }
+            spdlog::warn("An error occured and the instruction couldn't be virtualized");
+            spdlog::warn("Do you wish to continue? This could make the program unstable [y/n]");
 
+dialog:
+            std::string answer;
+            std::cin >> answer;
+
+            if(answer == "n" || answer == "N") {
+                spdlog::info("Aborting virtualization");
+                return Err(-1);
+            }
+            else if (answer == "y" || answer == "Y") {
+                spdlog::info("Resuming virtualization");
+                offset += instruction.length;
+                continue;
+            }
+            else {
+                goto dialog;
+            }
+        }
 
         offset += instruction.length;
+        spdlog::info("---------------");
     }
 
     // Generate instruction to notify the virtual machine that the execution is over.
