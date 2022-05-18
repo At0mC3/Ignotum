@@ -61,13 +61,6 @@ namespace Translation
         mapped_memory.Write<decltype(unsigned_imm)>(unsigned_imm);
     }
 
-    HOT_PATH FORCE_INLINE void Svr(const ZydisRegister &reg, MappedMemory &mapped_memory)
-    {
-        spdlog::info("Emitting -> SVR");
-        const auto inst = Virtual::Instruction(Virtual::Parameter(static_cast<std::uint16_t>(reg)), Virtual::Command::kVSvr);
-        mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
-    }
-
     /**
      * @brief
      *
@@ -85,6 +78,7 @@ namespace Translation
      */
     HOT_PATH FORCE_INLINE void UnrollMemoryAddressing(const ZydisDecodedOperandMem &mem, MappedMemory &mapped_memory)
     {
+        spdlog::info("Starting memory unrolling sequence.");
         // Load the content of the base register on the stack
         // If the operation doesn't use a base, just load 0
         if (mem.base != ZYDIS_REGISTER_NONE)
@@ -99,6 +93,7 @@ namespace Translation
         else
             Ldi(0, mapped_memory);
 
+        spdlog::info("Emitting -> kVADD");
         // Generate the virtual instruction to add both values together
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
@@ -114,6 +109,7 @@ namespace Translation
         {
             Ldi(mem.scale, mapped_memory);
 
+            spdlog::info("Emitting -> kVMUL");
             const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVMul);
             mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
         }
@@ -121,9 +117,32 @@ namespace Translation
         {
             Ldi(0, mapped_memory);
 
+            spdlog::info("Emitting -> kVADD");
             const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
             mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
         }
+
+        spdlog::info("Emitting -> kVADD");
+        const auto inst2 = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
+        mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+
+        spdlog::info("Memory unrolling sequence done.");
+    }
+
+    HOT_PATH FORCE_INLINE void Svr(const ZydisRegister &reg, MappedMemory &mapped_memory)
+    {
+        spdlog::info("Emitting -> SVR");
+        const auto inst = Virtual::Instruction(Virtual::Parameter(static_cast<std::uint16_t>(reg)), Virtual::Command::kVSvr);
+        mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+    }
+
+    HOT_PATH FORCE_INLINE void Svm(const ZydisDecodedOperandMem& mem, MappedMemory &mapped_memory)
+    {
+        UnrollMemoryAddressing(mem, mapped_memory);
+
+        spdlog::info("Emitting -> SVM");
+        const auto inst = Virtual::Instruction(Virtual::Parameter(Parameter::kNone), Virtual::Command::kVSvm);
+        mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
     }
 
     HOT_PATH FORCE_INLINE void Ldm(const ZydisDecodedOperandMem &mem, MappedMemory &mapped_memory)
@@ -192,6 +211,26 @@ namespace Translation
         }
     }
 
+    HOT_PATH FORCE_INLINE void HandleLoadSourceOperand(
+        const ZydisDecodedOperand& source_operand,
+        MappedMemory &mapped_memory)
+    {
+        switch (source_operand.type)
+        {
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_REGISTER:
+            Ldr(source_operand.reg.value, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
+            Ldm(source_operand.mem, mapped_memory);
+            break;
+        case ZydisOperandType::ZYDIS_OPERAND_TYPE_IMMEDIATE:
+            Ldi(source_operand.imm, mapped_memory);
+            break;
+        default:
+            break;
+        }
+    }
+
     HOT_PATH FORCE_INLINE void HandleSaveGeneric(
         const ZydisDecodedOperand &operand,
         MappedMemory &mapped_memory)
@@ -202,7 +241,7 @@ namespace Translation
             Svr(operand.reg.value, mapped_memory);
             break;
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_MEMORY:
-            // std::cout << "[DEBUG]: " << DebugPrintReg(operand.mem.base) << "\n";
+            Svm(operand.mem, mapped_memory);
             // Ldm(operand.mem, mapped_memory);
             break;
         case ZydisOperandType::ZYDIS_OPERAND_TYPE_POINTER:
@@ -235,15 +274,16 @@ namespace Translation
         spdlog::info("Emitting -> kVADD");
         const auto inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVAdd);
         mapped_memory.Write<Virtual::InstructionLength>(inst.AssembleInstruction());
+        
+        HandleSaveGeneric(operands[0], mapped_memory);
     }
 
     HOT_PATH FORCE_INLINE void MovInstLogic(
         const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
         MappedMemory &mapped_memory)
     {
-        HandleLoadGenericOperands(operands, mapped_memory);
-
-        // const auto inst = Virtual::Instruction(Parameter(Parameter::kNone))
+        HandleLoadSourceOperand(operands[1], mapped_memory);
+        HandleSaveGeneric(operands[0], mapped_memory);
     }
 
     /**
