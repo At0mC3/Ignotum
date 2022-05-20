@@ -7,12 +7,14 @@
 #include <bit>
 #include <variant>
 #include <cstdint>
+#include <optional>
 
 // Project libraries
 #include <Virtual.hpp>
 #include <Parameter.hpp>
 #include <MappedMemory.hpp>
 #include <utl/Utl.hpp>
+#include <NativeEmitter/NativeEmitter.hpp>
 
 // 3rd party Library
 #include <Zydis/Zydis.h>
@@ -22,9 +24,10 @@
 namespace Translation
 {
     using Virtual::Parameter;
-    enum TranslationError
+    enum class RetResult
     {
-        INSTRUCTION_NOT_FOUND, // The equivalent virtual instruction doesn't exist. A switch is needed
+        OK, // Everything went perfectly fine
+        INSTRUCTION_NOT_SUPPORTED, // The equivalent virtual instruction doesn't exist. A switch is needed
         OUT_OF_MEMORY          // The mapped memory object ran out of space with it's internal buffer
     };
 
@@ -297,10 +300,11 @@ namespace Translation
      * @return Result<bool, TranslationError>
      * The Ok value can be ignored. For the error, see above for the enum definition.
      */
-    HOT_PATH FORCE_INLINE Result<bool, TranslationError> TranslateInstruction(
+    HOT_PATH FORCE_INLINE Translation::RetResult TranslateInstruction(
         const ZydisDecodedInstruction &instruction,
         const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
-        MappedMemory &mapped_memory);
+        MappedMemory &mapped_memory,
+        bool isProbing = false);
 
     /**
      * @brief
@@ -312,7 +316,10 @@ namespace Translation
      * @return MappedMemory
      * A mapped memory object containing all of the translated instructions
      */
-    HOT_PATH Result<MappedMemory, int> TranslateInstructionBlock(const MappedMemory &instruction_block);
+    HOT_PATH Result<MappedMemory, int> 
+    TranslateInstructionBlock(
+        const MappedMemory &instruction_block,
+        NativeEmitter* native_emitter);
 }
 
 #endif
