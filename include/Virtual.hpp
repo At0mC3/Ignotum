@@ -20,6 +20,7 @@ namespace Virtual
         kVSvr,
         kVSvm,
 
+        kVmSwitch, // Indicates to the VM that the next instructions are native
         kVmExit
     };
 
