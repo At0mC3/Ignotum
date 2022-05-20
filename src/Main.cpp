@@ -12,6 +12,7 @@
 #include <Virtual.hpp>
 #include <MappedMemory.hpp>
 #include <Assembler.hpp>
+#include <NativeEmitter/x64NativeEmitter.hpp>
 
 #include <result.h>
 #include <Zydis/Zydis.h>
@@ -156,6 +157,8 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
     const auto regions = arg_parser.get<std::vector<std::uint64_t>>("--block");
     const auto region_pairs = ValidateRegions(regions).expect("Failed to pair the regions");
 
+    auto native_emitter = new x64NativeEmitter;
+
     // Go over every region specified to translated them
     for(const auto& pair : region_pairs)
     {
@@ -175,11 +178,11 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 
         // Write the patched instructions to the buffer to patch the region
         const auto section_offset = ign2_region.VirtualAddress - ign1_region.VirtualAddress;
-        if(!X64::Generator::PushX32(instruction_block, section_offset))
+        if(!native_emitter->EmitPush32Bit(section_offset, instruction_block))
             Panic("The buffer is too small to call the virtual machine");
 
         const auto call_offset = ign1_region.VirtualAddress - (pair.first + instruction_block.CursorPos());
-        if(!X64::Generator::CallNear(instruction_block, call_offset))
+        if(!native_emitter->EmitNearCall(call_offset, instruction_block))
             Panic("The buffer is too small to call the virtual machine");
 
         const auto size_remaining = instruction_block.Size() - instruction_block.CursorPos();
