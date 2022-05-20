@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 
 #include <result.h>
@@ -38,6 +39,20 @@ public:
 
         // Increment the cursor
         m_cursor_i += sizeof(value);
+        return true;
+    }
+
+    [[nodiscard]] bool Write(std::uint8_t* source, std::size_t size) 
+    {
+        if(m_size - m_cursor_i < size)
+            return false;
+
+        // Get a pointer to the buffer and cast it to the size of the given value
+        auto* ptr = m_buffer.get() + m_cursor_i;
+        std::memcpy(ptr, source, size);
+
+        // Increment the cursor
+        m_cursor_i += size;
         return true;
     }
 };
