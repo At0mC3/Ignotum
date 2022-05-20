@@ -2,31 +2,43 @@
 
 #include <Translation.hpp>
 
-HOT_PATH FORCE_INLINE Result<bool, Translation::TranslationError> Translation::TranslateInstruction(
+HOT_PATH FORCE_INLINE Translation::RetResult Translation::TranslateInstruction(
     const ZydisDecodedInstruction &instruction,
     const ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE],
-    MappedMemory& mapped_memory
+    MappedMemory& mapped_memory,
+    bool isProbing
 )
 {
     switch(instruction.mnemonic)
     {
         case ZydisMnemonic::ZYDIS_MNEMONIC_SUB:
+            if(isProbing)
+                return RetResult::OK;
             SubInstLogic(operands, mapped_memory);
             break;
         case ZydisMnemonic::ZYDIS_MNEMONIC_ADD:
+            if(isProbing)
+                return RetResult::OK;
             AddInstLogic(operands, mapped_memory);
             break;
         case ZydisMnemonic::ZYDIS_MNEMONIC_MOV:
+            if(isProbing)
+                return RetResult::OK;
             MovInstLogic(operands, mapped_memory);
             break;
         default: // Instruction was not found
+            return RetResult::INSTRUCTION_NOT_SUPPORTED;
             break;
     }
     
-    return Ok(true);
+    return RetResult::OK;
 }
 
-HOT_PATH Result<MappedMemory, int> Translation::TranslateInstructionBlock(const MappedMemory& instruction_block)
+HOT_PATH Result<MappedMemory, int> 
+Translation::TranslateInstructionBlock(
+    const MappedMemory& instruction_block, 
+    NativeEmitter* native_emitter
+)
 {
     const auto inner_buffer_size = instruction_block.Size();
     const auto buffer = instruction_block.InnerPtr().get();
@@ -49,6 +61,10 @@ HOT_PATH Result<MappedMemory, int> Translation::TranslateInstructionBlock(const 
 
     auto virtual_memory = virtual_memory_result.unwrap();
 
+    // Indicates to the TranslationInstruction function to simply return if the instruction is supported
+    // without emitting any code
+    bool isProbing{false};
+
     while (ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, buffer + offset, inner_buffer_size - offset,
         &instruction, operands, ZYDIS_MAX_OPERAND_COUNT_VISIBLE, 
         ZYDIS_DFLAG_VISIBLE_OPERANDS_ONLY)))
@@ -64,30 +80,38 @@ HOT_PATH Result<MappedMemory, int> Translation::TranslateInstructionBlock(const 
         const auto translation_result = Translation::TranslateInstruction(
             instruction,
             operands,
-            virtual_memory
+            virtual_memory,
+            isProbing
         );
 
-        if(translation_result.isErr())
+        // If the return result is INSTRUCTION_NOT_SUPPORTED
+        // We need to make a patch of native instructions and signal the virtual machine to switch back
+        // Lets just store them in a vector until we hit a support instruction
+        if(translation_result == RetResult::INSTRUCTION_NOT_SUPPORTED)
         {
-            spdlog::warn("An error occured and the instruction couldn't be virtualized");
-            spdlog::warn("Do you wish to continue? This could make the program unstable [y/n]");
+            // If it's true, we already generate the switch
+            if(isProbing == true) 
+            {
+                // Generate the switch instruction to move into native mode
+                spdlog::info("Emitting -> kVmSwitch");
+                const auto kswitch_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmSwitch);
+                virtual_memory.Write<Virtual::InstructionLength>(kswitch_inst.AssembleInstruction());
+            } else {
+                isProbing = true; 
+            }
 
-dialog:
-            std::string answer;
-            std::cin >> answer;
+            // Write the native instruction
+            virtual_memory.Write(std::bit_cast<std::uint8_t*>(buffer + offset), instruction.length);
+        }
 
-            if(answer == "n" || answer == "N") {
-                spdlog::info("Aborting virtualization");
-                return Err(-1);
-            }
-            else if (answer == "y" || answer == "Y") {
-                spdlog::info("Resuming virtualization");
-                offset += instruction.length;
-                continue;
-            }
-            else {
-                goto dialog;
-            }
+        // Probing is done, we found a supported instruction.
+        // We now need to finish the block and emitting code for this instruction
+        // No code was emitted for this one previously because of the probing flag
+        if(isProbing && translation_result == RetResult::OK)
+        {
+            isProbing = false;
+
+            // Emit native code which will bring the execution back to the machine
         }
 
         offset += instruction.length;
