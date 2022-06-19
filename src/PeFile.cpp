@@ -161,9 +161,15 @@ bool PeFile::LoadImports()
         // Peek to where the string is stored to copy it
         m_file_handle.seekg(import_name_raw);
 
+        const auto MAX_FN_NAME_LEN = 0x1000;
+
         // We copy the name
         std::string dll_import_name;
         std::getline(m_file_handle, dll_import_name, '\0');
+
+        // The names can't be greater than 4096 bytes
+        if(dll_import_name.size() > MAX_FN_NAME_LEN)
+            return false;
 
         // Roll back to the array of import descriptors
         m_file_handle.seekg(descriptor_position);
@@ -431,11 +437,11 @@ Result<std::shared_ptr<PeFile>, const char*> PeFile::Load(const std::filesystem:
     if(!pe->m_file_handle.is_open())
         return Err("Could not open the file");
 
-    std::byte header_signature[2];
+    std::uint8_t header_signature[2];
     pe->m_file_handle.read(std::bit_cast<char*>(&header_signature), 2);
 
     // Check if the first bytes of the file is equal to "MZ"
-    if( header_signature[0] != std::byte(0x4D) && header_signature[1] != std::byte(0x5A) )
+    if( header_signature[0] != 0x4D && header_signature[1] != 0x5A )
         return Err("Invalid sigature");
 
     // Seek to the end of IMAGE_DOS_HEADER and remove 4 byte to get the 32bit e_lfanew

@@ -21,7 +21,8 @@ namespace Virtual
         kVSvm,
 
         kVmSwitch, // Indicates to the VM that the next instructions are native
-        kVmExit
+        kVmExit,
+        kVmExit2 // Will calculate the address for the return 
     };
 
     enum class RegisterMap : std::uint8_t
