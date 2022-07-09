@@ -12,7 +12,7 @@ namespace Win32
         UNKNOWN
     };
 
-    namespace Definitions
+    namespace Constants
     {
         constexpr std::uint16_t DOS_MAGIC = 0x5A4D;
         constexpr std::uint32_t IMAGE_NUMBEROF_DIRECTORY_ENTRIES = 16;
@@ -41,6 +41,10 @@ namespace Win32
         constexpr std::uint32_t IMAGE_DIRECTORY_ENTRY_TLS = 9;
         // Load Configuration Director
         constexpr std::uint32_t IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG = 10;
+        // 32 bits specifier
+        constexpr std::uint16_t IMAGE_FILE_MACHINE_I386 = 0x014c;
+        // 64 bits specifier
+        constexpr std::uint16_t IMAGE_FILE_MACHINE_AMD64 = 0x8664;
     }
 
     enum class Architecture : std::uint16_t
@@ -108,7 +112,7 @@ namespace Win32
     };
 
     struct IMAGE_SECTION_HEADER {
-        BYTE  Name[Definitions::IMAGE_SIZEOF_SHORT_NAME];
+        BYTE  Name[Constants::IMAGE_SIZEOF_SHORT_NAME];
         union {
             DWORD PhysicalAddress;
             DWORD VirtualSize;
@@ -168,7 +172,7 @@ namespace Win32
         ULONGLONG   SizeOfHeapCommit;
         DWORD       LoaderFlags;
         DWORD       NumberOfRvaAndSizes;
-        IMAGE_DATA_DIRECTORY DataDirectory[Definitions::IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
+        IMAGE_DATA_DIRECTORY DataDirectory[Constants::IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
     };
 
     struct IMAGE_OPTIONAL_HEADER32 {
@@ -202,7 +206,7 @@ namespace Win32
         DWORD                SizeOfHeapCommit;
         DWORD                LoaderFlags;
         DWORD                NumberOfRvaAndSizes;
-        IMAGE_DATA_DIRECTORY DataDirectory[Definitions::IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
+        IMAGE_DATA_DIRECTORY DataDirectory[Constants::IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
     };
 
     struct IMAGE_NT_HEADERS32 {
