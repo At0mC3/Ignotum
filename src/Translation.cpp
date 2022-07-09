@@ -2,6 +2,7 @@
 #include <random>
 
 #include <Translation.hpp>
+#include <Cryptography.hpp>
 
 HOT_PATH FORCE_INLINE Translation::RetResult Translation::TranslateInstruction(
     const ZydisDecodedInstruction &instruction,
@@ -40,29 +41,11 @@ HOT_PATH FORCE_INLINE Translation::RetResult Translation::TranslateInstruction(
             break;
     }
     
-    if(!success)
+    if(!success) {
         return RetResult::OUT_OF_MEMORY;
+    }
 
     return RetResult::OK;
-}
-
-inline std::uint16_t Generate16BitKey2()
-{
-    std::random_device rd;
-    std::independent_bits_engine<std::mt19937, 16, std::uint16_t> key_engine(rd());
-    return key_engine();
-}
-
-
-std::uint32_t EncodeVIPEntry2(std::uint32_t original_vip, std::uint16_t key_value)
-{
-    const auto key1 = (std::uint8_t)key_value;
-    const auto key2 = (std::uint8_t)(key_value >> 8);
-
-    auto enc_vip = original_vip ^ ((std::uint32_t)key1 << 8);
-    enc_vip = enc_vip ^ ((std::uint32_t)key2);
-
-    return (enc_vip << 16) | key_value;
 }
 
 HOT_PATH std::optional<MappedMemory> 
@@ -87,11 +70,12 @@ Translation::TranslateInstructionBlock(
     ZydisDecodedInstruction instruction;
     ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT_VISIBLE];
 
-    const auto virtual_memory_result = MappedMemory::Allocate(inner_buffer_size * 12);
-    if(virtual_memory_result.isErr())
+    const auto virtual_memory_result = MappedMemory::Allocate(inner_buffer_size * 334);
+    if(!virtual_memory_result) {
         return {};
+    }
 
-    auto virtual_memory = virtual_memory_result.unwrap();
+    auto virtual_memory = virtual_memory_result.value();
 
     // Indicates to the TranslationInstruction function to simply return if the instruction is supported
     // without emitting any code
@@ -133,8 +117,11 @@ Translation::TranslateInstructionBlock(
                 // Generate the switch instruction to move into native mode
                 spdlog::info("Emitting -> kVmSwitch");
                 const auto kswitch_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmSwitch);
-                if(!virtual_memory.Write<Virtual::InstructionLength>(kswitch_inst.AssembleInstruction()))
+
+                if(!virtual_memory.Write<Virtual::InstructionLength>(kswitch_inst.AssembleInstruction())) {
+                    std::puts("Out of memory");
                     return {};
+                }
                 
                 vm_switched = true;
                 is_probing = true;
@@ -142,12 +129,14 @@ Translation::TranslateInstructionBlock(
 
             // Write the native instruction
             spdlog::info("Emitting native instruction");
-            if(!virtual_memory.Write(std::bit_cast<std::uint8_t*>(buffer + offset), instruction.length))
+            if(!virtual_memory.Write(std::bit_cast<std::uint8_t*>(buffer + offset), instruction.length)) {
                 return {};
+            }
         }
 
-        if(translation_result == RetResult::OUT_OF_MEMORY)
+        if(translation_result == RetResult::OUT_OF_MEMORY) {
             return {};
+        }
 
         // Probing is done, we found a supported instruction.
         // We now need to finish the block and emitting code for this instruction
@@ -161,8 +150,8 @@ Translation::TranslateInstructionBlock(
 
             const std::uint32_t vip = relative_offset + virtual_memory.CursorPos() + 15;
 
-            const auto vip_enc_key = Generate16BitKey2();
-            const auto enc_vip = EncodeVIPEntry2(vip, vip_enc_key);
+            const auto vip_enc_key = cryptography::Generate16BitKey();
+            const auto enc_vip = cryptography::EncodeVIPEntry(vip, vip_enc_key);
             native_emitter->EmitPush32Bit(enc_vip, virtual_memory); // Push where the VIP should be
 
             const auto ret_relative = context.vm_block_rva - (context.original_block_rva + 10);
@@ -193,14 +182,16 @@ Translation::TranslateInstructionBlock(
     if(vm_switched) 
     {
         const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit2);
-        if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction()))
+        if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
             return {};
+        }
     }
     else
     {
         const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit);
-        if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction()))
+        if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
             return {};
+        }
     }
 
     return virtual_memory;

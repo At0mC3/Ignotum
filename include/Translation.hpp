@@ -56,10 +56,15 @@ namespace Translation
 
     HOT_PATH FORCE_INLINE std::uint16_t GetRegisterIndex(const ZydisRegister &reg)
     {
-        const auto base = 53;
-        const auto reg_index = static_cast<std::uint16_t>(reg) - base;
+        const auto lower_32bit = static_cast<std::uint16_t>(ZydisRegister::ZYDIS_REGISTER_EAX);
+        const auto higher_32bit = static_cast<std::uint16_t>(ZydisRegister::ZYDIS_REGISTER_EAX);
 
-        return register_map[reg_index];
+        auto reg_index = static_cast<std::uint16_t>(reg);
+        if(reg_index >= lower_32bit && reg_index <= higher_32bit) {
+            reg_index += 16;
+        }
+
+        return register_map[reg_index - 53];
     }
 
     HOT_PATH FORCE_INLINE bool Ldr(const ZydisRegister &reg, MappedMemory &mapped_memory)
@@ -387,7 +392,7 @@ namespace Translation
 
         // Get the relative value of where this will call
         const auto call_relative_imm = operands[0].imm.value.s;
-
+        std::cout << std::hex << call_relative_imm << "\n";
         return true;
     }
 
