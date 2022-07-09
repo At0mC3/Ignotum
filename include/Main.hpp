@@ -17,7 +17,7 @@ namespace Main
         // The second item is the size of the region to be virtualized
         std::vector<std::pair<std::size_t, std::size_t>> region_pairs;
 
-        BeginProcessContext(
+        explicit BeginProcessContext(
             std::shared_ptr<PeFile> _pe_file,
             Win32::IMAGE_SECTION_HEADER _vm_section,
             Win32::IMAGE_SECTION_HEADER _vcode_section,

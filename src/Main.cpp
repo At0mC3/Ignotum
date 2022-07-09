@@ -16,6 +16,7 @@
 #include <Assembler.hpp>
 #include <NativeEmitter/x64NativeEmitter.hpp>
 #include <TranslationContext.hpp>
+#include <Cryptography.hpp>
 
 #include <result.h>
 #include <Zydis/Zydis.h>
@@ -24,7 +25,14 @@
 
 #define DEBUG
 
-inline void Panic(const char* msg)
+/**
+ * @brief
+ * Displays a messages before quiting.
+ * This function does not return
+ *
+ * @param msg Text to be displayed before the exit
+ */
+[[noreturn]] inline void Panic(const char* msg)
 {
     std::puts(msg);
     std::exit(-1);
@@ -39,7 +47,8 @@ inline void Panic(const char* msg)
  * @return Result<std::filesystem::path, const char*>
  * Either a path for the given path string or an error message 
  */
-Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& file_path)
+Result<std::filesystem::path, const char*>
+ValidateFile(const std::string_view& file_path)
 {
     std::filesystem::path p{file_path};
 
@@ -59,7 +68,8 @@ Result<std::filesystem::path, const char*> ValidateFile(const std::string_view& 
  * @return Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*>
  * A vector of pair is returned is it was successful, otherwise, an error message is returned 
  */
-Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRegions(const std::vector<std::size_t> &vec)
+Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*>
+ValidateRegions(const std::vector<std::size_t> &vec)
 {
     if(vec.size() % 2 != 0)
         return Err("The format of the regions is invalid");
@@ -73,41 +83,64 @@ Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*> ValidateRe
     return Ok(pairs);
 }
 
-std::optional<MappedMemory> LoadVirtualMachine(const std::string& path)
+/**
+ * @brief
+ * Using a filesystem path, the raw binary for the virtual machine
+ * is loaded in memory.
+ * @param path The path for the location of the virtual machine .bin file.
+ * @return std::optional<MappedMemory> If the function succeed,
+ * the buffer will be returned as a MappedMemory object. If it fails,
+ * std::nullopt is returned.
+ */
+std::optional<MappedMemory>
+LoadVirtualMachine(const std::string& path)
 {
+    // Convert the std::string path into a filesystem path object for easy use
     std::filesystem::path p{path};
-    if(!std::filesystem::exists(p) && !std::filesystem::is_regular_file(p))
-        return {};
 
-    std::ifstream ifs(p, std::ios::binary);
+
+    if(!std::filesystem::exists(p) && !std::filesystem::is_regular_file(p)) {
+        return {};
+    }
+
+    // Open a stream of the file and make sure the handle is opened
+    std::ifstream ifs(
+        p,
+        std::ios::binary | std::ios::in
+    );
+
+    if(!ifs.is_open()) {
+        return {};
+    }
 
     const auto file_size = std::filesystem::file_size(p);
 
-    auto mapped_memory = MappedMemory::Allocate(file_size).unwrap();
-    ifs.read(std::bit_cast<char*>(mapped_memory.InnerPtr().get()), file_size);
+    auto mapped_memory = MappedMemory::Allocate(file_size);
+    if(!mapped_memory) {
+        return {};
+    }
+
+    ifs.read(
+        std::bit_cast<char*>(mapped_memory.value().InnerPtrRaw()),
+        file_size
+    );
 
     return mapped_memory;
 }
 
-inline std::uint16_t Generate16BitKey()
-{
-    std::random_device rd;
-    std::independent_bits_engine<std::mt19937, 16, std::uint16_t> key_engine(rd());
-    return key_engine();
-}
-
-std::uint32_t EncodeVIPEntry(std::uint32_t original_vip, std::uint16_t key_value)
-{
-    const auto key1 = (std::uint8_t)key_value;
-    const auto key2 = (std::uint8_t)(key_value >> 8);
-
-    auto enc_vip = original_vip ^ ((std::uint32_t)key1 << 8);
-    enc_vip = enc_vip ^ ((std::uint32_t)key2);
-
-    return (enc_vip << 16) | key_value;
-}
-
-argparse::ArgumentParser ParseCmdArgs(int argc, char** argv)
+/**
+ * @brief
+ * The function is in charge of initializing the argparse library to parse
+ * the command line arguments. Once everything was initialized and parsed,
+ * the object containing the flags is returned.
+ *
+ * @param argc
+ * @param argv
+ * @return argparse::ArgumentParser Object containing the parsed command line
+ * arguments.
+ */
+argparse::ArgumentParser
+InitAndParseCmdArgs(int argc, char** argv)
 {
     argparse::ArgumentParser arg_parser("Project Ignotum");
 
@@ -172,33 +205,38 @@ int BeginTranslationProcess(const Main::BeginProcessContext& process_context)
                 .expect("The provided address could not be loaded in memory");
 
         const auto translated_block_res = Translation::TranslateInstructionBlock(instruction_block, native_emitter, context);
-        if(!translated_block_res)
+        if(!translated_block_res) {
             Panic("The translation failed");
+        }
 
-
-        const auto ign2_write_res = process_context.pe_file->WriteToRegion(process_context.vcode_section.VirtualAddress + vcode_offset, translated_block_res.value());
-        if(ign2_write_res.isErr())
-            Panic("The translated code could not be written to the code section");
+        const auto ign2_write_res = process_context.pe_file->WriteToRegionPos(context.vcode_block_rva, translated_block_res.value());
+        if(ign2_write_res.isErr()) {
+            spdlog::critical("Writing to section failed with msg: {}", ign2_write_res.unwrapErr());
+            return -1;
+        }
 
         // Update the offset
         vcode_offset += translated_block_res.value().CursorPos();
+        std::cout << std::hex << context.vcode_block_rva << " : vcode offset\n";
 
         // Write the patched instructions to the buffer to patch the region
-        const std::uint32_t section_offset_raw = process_context.vcode_section.VirtualAddress - process_context.vm_section.VirtualAddress;
+        const std::uint32_t section_offset_raw = context.vcode_block_rva - process_context.vm_section.VirtualAddress;
         if(section_offset_raw > std::numeric_limits<std::uint16_t>::max())
             Panic("The section offset is too big");
 
         // Generate a unique key to encode the VIP
         // This could help with scanning
-        const auto enc_key = Generate16BitKey();
-        const std::uint32_t encoded_section_offset = EncodeVIPEntry(section_offset_raw, enc_key);
+        const auto enc_key = cryptography::Generate16BitKey();
+        const std::uint32_t encoded_section_offset = cryptography::EncodeVIPEntry(section_offset_raw, enc_key);
+        std::cout << "VIP: " << section_offset_raw << "\n";
         
         if(!native_emitter->EmitPush32Bit(encoded_section_offset, instruction_block))
             Panic("The buffer is too small to call the virtual machine");
 
         const auto call_offset = process_context.vm_section.VirtualAddress - (pair.first + instruction_block.CursorPos());
-        if(!native_emitter->EmitNearCall(call_offset, instruction_block))
+        if(!native_emitter->EmitNearCall(call_offset, instruction_block)) {
             Panic("The buffer is too small to call the virtual machine");
+        }
 
         const auto size_remaining = instruction_block.Size() - instruction_block.CursorPos();
         std::memset(instruction_block.InnerPtr().get() + instruction_block.CursorPos(), '\x90', size_remaining);
@@ -215,21 +253,25 @@ int BeginTranslationProcess(const Main::BeginProcessContext& process_context)
 int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv) 
 {
     // MIGHT NOT RETURN
-    const auto cmd_args = ParseCmdArgs(argc, argv);
+    const auto cmd_args = InitAndParseCmdArgs(argc, argv);
 
+    // Get the input file path from the arg parser and make sure the file is valid
     const auto file_path = cmd_args.get<std::string>("--input");
-    const auto path_handle = ValidateFile(file_path).expect("The given file is not valid");
+    const auto path_handle = ValidateFile(file_path)
+                                .expect("The given file is not valid");
 
+    // Get the virtual machine path from the arg parser and load it in memory
     const auto vm_path = cmd_args.get<std::string>("--vm");
     const auto virtual_machine_res = LoadVirtualMachine(vm_path);
     if(!virtual_machine_res) {
         Panic("The path for the virtual machine is invalid");
     }
 
-    const auto virtual_machine = *virtual_machine_res;
+    const auto virtual_machine = virtual_machine_res.value();
 
     // Parse the exe file to begin the translation process
-    auto pe_file_res = PeFile::Load(path_handle, PeFile::LoadOption::FULL_LOAD);
+    // The imports are not loaded right now because the API hollowing is not yet available
+    auto pe_file_res = PeFile::Load(path_handle, PeFile::LoadOption::LAZY_LOAD);
     if(pe_file_res.isErr()) {
         spdlog::critical("Failed to load the PE file: MSG-> {}", pe_file_res.unwrapErr());
         return -1;
@@ -239,29 +281,39 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 
     // Create the first region which will hold the virtual machine
     // Write the vm to it
-    const auto vm_region_size = 0x1000;
+    const auto vm_region_size = 0x1000; // it's 0x1000 because of the alignment
     const auto ign1_region_res = pe_file->AddSection(".Ign1", vm_region_size);
     if(!ign1_region_res) {
         Panic("Failed to add the first region for the virtual machine");
     }
 
-    // Write the virtual machine in the section
-    const auto ign1_region = *ign1_region_res;
-    pe_file->WriteToRegion(ign1_region.VirtualAddress, virtual_machine).unwrap();
+    // The addition of the section was a section, get the returned handle
+    const auto ign1_region = ign1_region_res.value();
 
-    const auto vcode_region_size = 0x1000;
+    // Write the vm binary to the '.Ign1' region
+    pe_file->WriteToRegion(ign1_region.VirtualAddress, virtual_machine)
+            .expect("The writing of the virtual machine failed");
+
+    const auto vcode_region_size = 0x1000; // it's 0x1000 because of the alignment
+
     // Create the second region which will hold all of the translated code
     const auto ign2_region_res = pe_file->AddSection(".Ign2", vcode_region_size);
     if(!ign2_region_res) {
         Panic("Failed to add the second region for the virtualized code");
     }
-    const auto ign2_region = *ign2_region_res;
+    const auto ign2_region = ign2_region_res.value();
 
     // Once the file was successfully loaded, we manage the specified block for translation
     const auto regions = cmd_args.get<std::vector<std::uint64_t>>("--block");
-    const auto region_pairs = ValidateRegions(regions).expect("Failed to pair the regions");
+    const auto region_pairs = ValidateRegions(regions)
+                                .expect("Failed to pair the regions");
 
-    Main::BeginProcessContext process_context(pe_file, ign1_region, ign2_region, region_pairs);
+    Main::BeginProcessContext process_context(
+        pe_file,
+        ign1_region,
+        ign2_region,
+        region_pairs
+    );
     
     return BeginTranslationProcess(process_context);
 }
