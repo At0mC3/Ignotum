@@ -9,21 +9,23 @@
 #include <cstdint>
 #include <cstring>
 #include <utility>
+#include <optional>
 
 #include <result.h>
 
 class MappedMemory
 {
 private:
-    std::shared_ptr<std::byte[]> m_buffer;
+    std::shared_ptr<std::uint8_t[]> m_buffer;
     std::uintmax_t m_size; // The size of the buffer
     std::uintmax_t m_cursor_i{ 0 }; // This holds a cursor index for the buffer
 public:
-    MappedMemory(std::shared_ptr<std::byte[]>& buffer, std::uintmax_t size) : m_buffer(std::move(buffer)), m_size(size) {}
-    static Result<MappedMemory, const char*> Allocate(std::uintmax_t buffer_size);
+    MappedMemory(std::shared_ptr<std::uint8_t[]>& buffer, std::uintmax_t size) : m_buffer(std::move(buffer)), m_size(size) {}
+    static std::optional<MappedMemory> Allocate(std::uintmax_t buffer_size);
 public:
     // Gives access to the internal buffer
-    [[nodiscard]] std::shared_ptr<std::byte[]> InnerPtr() const { return m_buffer; }
+    [[nodiscard]] std::shared_ptr<std::uint8_t[]> InnerPtr() const { return m_buffer; }
+    [[nodiscard]] std::uint8_t* InnerPtrRaw() const { return m_buffer.get(); }
     [[nodiscard]] std::uintmax_t Size() const { return m_size; }
     [[nodiscard]] std::uintmax_t CursorPos() const { return m_cursor_i; }
 public:

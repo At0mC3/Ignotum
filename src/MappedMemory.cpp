@@ -5,11 +5,14 @@
 
 #include <MappedMemory.hpp>
 
-Result<MappedMemory, const char*> MappedMemory::Allocate(std::uintmax_t buffer_size)
+std::optional<MappedMemory> MappedMemory::Allocate(std::uintmax_t buffer_size)
 {
-    std::shared_ptr<std::byte[]> buffer(new(std::nothrow) std::byte[buffer_size]());
-    if(!buffer)
-        return Err("Failed to initialize the buffer");
+    auto mem_ptr = new(std::nothrow) std::uint8_t[buffer_size]();
+    if(!mem_ptr) {
+        return {};
+    }
 
-    return Ok(MappedMemory(buffer, buffer_size));
+    std::shared_ptr<std::uint8_t[]> buffer(mem_ptr);
+
+    return MappedMemory(buffer, buffer_size);
 }
