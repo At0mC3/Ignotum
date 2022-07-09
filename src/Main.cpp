@@ -51,7 +51,8 @@ Result<std::filesystem::path, const char*>
 ValidateFile(const std::string_view& file_path)
 {
     std::filesystem::path p{file_path};
-
+    
+    // my thought here is that you could print a descriptive error message like "The test.txt file does not exist" or "test.txt formatting is not valid"
     if(!std::filesystem::exists(p))
         return Err("The file does not exist");
     if(!std::filesystem::is_regular_file(p))
@@ -62,7 +63,7 @@ ValidateFile(const std::string_view& file_path)
 
 /**
  * @brief Given a vector of n amount of size_t, this function check if the size of it is big enough for pairs
- * by using modulo. If the format is correct, they are then but in pairs to make them more readable when processing
+ * by using modulo. If the format is correct, they are then put in pairs to make them more readable when processing
  *
  * @param vec The vector containing all of the addresses and the size of them
  * @return Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*>
@@ -88,7 +89,7 @@ ValidateRegions(const std::vector<std::size_t> &vec)
  * Using a filesystem path, the raw binary for the virtual machine
  * is loaded in memory.
  * @param path The path for the location of the virtual machine .bin file.
- * @return std::optional<MappedMemory> If the function succeed,
+ * @return std::optional<MappedMemory> If the function succeeds,
  * the buffer will be returned as a MappedMemory object. If it fails,
  * std::nullopt is returned.
  */
@@ -98,7 +99,9 @@ LoadVirtualMachine(const std::string& path)
     // Convert the std::string path into a filesystem path object for easy use
     std::filesystem::path p{path};
 
-
+    //maybe this is a stupid question but why not use your helper function you made earlier
+    // Result<std::filesystem::path, const char* ValidateFile(const std::string_view& file_path)
+    // this one^
     if(!std::filesystem::exists(p) && !std::filesystem::is_regular_file(p)) {
         return {};
     }
@@ -184,12 +187,12 @@ InitAndParseCmdArgs(int argc, char** argv)
 int BeginTranslationProcess(const Main::BeginProcessContext& process_context)
 {
     // Keeps track of where we're at in the virtual code section
-    // The section can't grow more than 4.2gb because of the windows header definition
+    // The section can't grow more than 4.2gb because of the Windows header definition
     std::uint32_t vcode_offset{0};
 
     auto native_emitter = std::make_shared<x64NativeEmitter>();
 
-    // Go over every region specified to translated them
+    // Go over every region specified to translate them
     for(const auto& pair : process_context.region_pairs)
     {
         const auto block_size = pair.second;
@@ -292,7 +295,7 @@ int BeginTranslationProcess(const Main::BeginProcessContext& process_context)
 
 int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 {
-    // MIGHT NOT RETURN
+    // MIGHT NOT RETURN - prob make this lowercase or more descriptive
     const auto cmd_args = InitAndParseCmdArgs(argc, argv);
 
     // Get the input file path from the arg parser and make sure the file is valid
@@ -321,7 +324,7 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 
     // Create the first region which will hold the virtual machine
     // Write the vm to it
-    const auto vm_region_size = 0x1000; // it's 0x1000 because of the alignment
+    const auto vm_region_size = 0x1000; // it's 0x1000 because of the alignment - is it always this? hard coded is not usually good
     const auto ign1_region_res = pe_file->AddSection(".Ign1", vm_region_size);
     if(!ign1_region_res) {
         Panic("Failed to add the first region for the virtual machine");
