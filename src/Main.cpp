@@ -42,10 +42,10 @@
  * @brief In charge of validating a given path. It will check if exists.
  * Then it will check if the file is valid and not a directory
  * If it's valid, a filesystem::path will be returned
- * 
+ *
  * @param file_path The path of the file to be checked
  * @return Result<std::filesystem::path, const char*>
- * Either a path for the given path string or an error message 
+ * Either a path for the given path string or an error message
  */
 Result<std::filesystem::path, const char*>
 ValidateFile(const std::string_view& file_path)
@@ -63,10 +63,10 @@ ValidateFile(const std::string_view& file_path)
 /**
  * @brief Given a vector of n amount of size_t, this function check if the size of it is big enough for pairs
  * by using modulo. If the format is correct, they are then but in pairs to make them more readable when processing
- * 
+ *
  * @param vec The vector containing all of the addresses and the size of them
  * @return Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*>
- * A vector of pair is returned is it was successful, otherwise, an error message is returned 
+ * A vector of pair is returned is it was successful, otherwise, an error message is returned
  */
 Result<std::vector<std::pair<std::size_t, std::size_t>>, const char*>
 ValidateRegions(const std::vector<std::size_t> &vec)
@@ -173,6 +173,14 @@ InitAndParseCmdArgs(int argc, char** argv)
     return arg_parser;
 }
 
+/**
+ * @brief
+ * This function goes over all of the provided virtual addresses and loads the regions
+ * in memory. Once loaded, these regions are then translated to the custom p-code
+ *
+ * @param process_context
+ * @return int The value 0 is returned to indicate a success
+ */
 int BeginTranslationProcess(const Main::BeginProcessContext& process_context)
 {
     // Keeps track of where we're at in the virtual code section
@@ -189,7 +197,7 @@ int BeginTranslationProcess(const Main::BeginProcessContext& process_context)
 
         Translation::Context context(
             start_address, // Rva of the original instructions to maybe do some fixups for relative addressing
-            block_size,
+            block_size, // The size of the block
             process_context.vm_section.VirtualAddress, // Pass the start of the vm RVA and the size of it
             process_context.vm_section.SizeOfRawData,
             process_context.vcode_section.VirtualAddress + vcode_offset, // Pass where we currently at in the virtualized code section
@@ -204,53 +212,85 @@ int BeginTranslationProcess(const Main::BeginProcessContext& process_context)
         auto instruction_block = process_context.pe_file->LoadRegion(start_address, block_size)
                 .expect("The provided address could not be loaded in memory");
 
-        const auto translated_block_res = Translation::TranslateInstructionBlock(instruction_block, native_emitter, context);
+        // Translate the whole instruction block. The p-code should be returned
+        // From this function.
+        const auto translated_block_res = Translation::TranslateInstructionBlock(
+            instruction_block, native_emitter, context
+        );
+
         if(!translated_block_res) {
             Panic("The translation failed");
         }
 
-        const auto ign2_write_res = process_context.pe_file->WriteToRegionPos(context.vcode_block_rva, translated_block_res.value());
+        /*
+        Everything was translated succesfully, write it to the '.Ign2' section
+        Inside the pe file.
+        */
+        const auto ign2_write_res = process_context.pe_file->WriteToRegionPos(
+            context.vcode_block_rva,
+            translated_block_res.value()
+        );
+
         if(ign2_write_res.isErr()) {
             spdlog::critical("Writing to section failed with msg: {}", ign2_write_res.unwrapErr());
             return -1;
         }
 
-        // Update the offset
+        // Update the offset with the size of the translated block
         vcode_offset += translated_block_res.value().CursorPos();
-        std::cout << std::hex << context.vcode_block_rva << " : vcode offset\n";
 
         // Write the patched instructions to the buffer to patch the region
         const std::uint32_t section_offset_raw = context.vcode_block_rva - process_context.vm_section.VirtualAddress;
-        if(section_offset_raw > std::numeric_limits<std::uint16_t>::max())
+        if(section_offset_raw > std::numeric_limits<std::uint16_t>::max()) {
             Panic("The section offset is too big");
+        }
 
-        // Generate a unique key to encode the VIP
-        // This could help with scanning
+        // Generate a unique key to encode the VIP(virtual instruction pointer)
         const auto enc_key = cryptography::Generate16BitKey();
         const std::uint32_t encoded_section_offset = cryptography::EncodeVIPEntry(section_offset_raw, enc_key);
         std::cout << "VIP: " << section_offset_raw << "\n";
-        
-        if(!native_emitter->EmitPush32Bit(encoded_section_offset, instruction_block))
-            Panic("The buffer is too small to call the virtual machine");
 
+
+        /// Patching section.
+        /// This part is in charge of removing the original instructions with
+        /// NOPs.
+
+        // Emit a push instruction with the encoded value containing the
+        // offset of where the vip should start
+        // In x86, this would look like this [push 0xdeadbeef]
+        if(!native_emitter->EmitPush32Bit(encoded_section_offset, instruction_block)) {
+            Panic("The buffer is too small to call the virtual machine");
+        }
+
+        // Calculate the distance from the rva to the virtual machine inside the file
+        // This offset will be used to generate a call inside the virtual machine
         const auto call_offset = process_context.vm_section.VirtualAddress - (pair.first + instruction_block.CursorPos());
+
+        // Emit the call instruction using the relative offset that we just calculated
         if(!native_emitter->EmitNearCall(call_offset, instruction_block)) {
             Panic("The buffer is too small to call the virtual machine");
         }
 
+        // Overwrite everything after the new instructions and replace them
+        // With 0x90(NOP) to remove any original instructions
         const auto size_remaining = instruction_block.Size() - instruction_block.CursorPos();
         std::memset(instruction_block.InnerPtr().get() + instruction_block.CursorPos(), '\x90', size_remaining);
 
-        // Write the new buffer to patch them to call the virtual machine
+        // Write the patched buffer back to the original location
         const auto native_overwrite_res = process_context.pe_file->WriteToRegion(pair.first, instruction_block);
-        if(native_overwrite_res.isErr())
+        if(native_overwrite_res.isErr()) {
             Panic("Could not patch the original native code");
+        }
+
+        // Once this is all done, the patched function should look like this
+        // Push 0xdeadbeef // Encoded vip location
+        // Call vm // Relative offset to the virtual machione
     }
 
     return 0;
 }
 
-int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv) 
+int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
 {
     // MIGHT NOT RETURN
     const auto cmd_args = InitAndParseCmdArgs(argc, argv);
@@ -314,6 +354,6 @@ int main([[maybe_unused]]int argc, [[maybe_unused]]char** argv)
         ign2_region,
         region_pairs
     );
-    
+
     return BeginTranslationProcess(process_context);
 }
