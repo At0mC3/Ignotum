@@ -5,7 +5,7 @@
 
 #include <PeFile.hpp>
 
-namespace Main
+namespace mainspace
 {
     struct BeginProcessContext
     {
