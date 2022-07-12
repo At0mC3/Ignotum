@@ -116,7 +116,10 @@ Translation::TranslateInstructionBlock(
             {
                 // Generate the switch instruction to move into native mode
                 spdlog::info("Emitting -> kVmSwitch");
-                const auto kswitch_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmSwitch);
+                const auto kswitch_inst = Virtual::Instruction(
+                    Parameter(Parameter::kNone),
+                    Virtual::Command::kVmSwitch
+                );
 
                 if(!virtual_memory.Write<Virtual::InstructionLength>(kswitch_inst.AssembleInstruction())) {
                     std::puts("Out of memory");
@@ -163,13 +166,19 @@ Translation::TranslateInstructionBlock(
             spdlog::info("Emitting native instruction to resume VM execution");
 
             // We need to translate the instruction
-            Translation::TranslateInstruction(
+            const auto res = Translation::TranslateInstruction(
                 instruction,
                 operands,
                 virtual_memory,
                 context,
                 is_probing
             );
+
+            // The result should be ok here since the if statement was reached
+            // We can safely assume an error occured, time to return
+            if(res != RetResult::OK) {
+                return {};
+            }
         }
 
         offset += instruction.length;
@@ -201,21 +210,6 @@ Translation::TranslateInstructionBlock(
     if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
         return {};
     }
-
-    // if(vm_switched)
-    // {
-    //     const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit2);
-    //     if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
-    //         return {};
-    //     }
-    // }
-    // else
-    // {
-    //     const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit);
-    //     if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
-    //         return {};
-    //     }
-    // }
 
     return virtual_memory;
 }
