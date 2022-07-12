@@ -179,20 +179,43 @@ Translation::TranslateInstructionBlock(
     // Generate instruction to notify the virtual machine that the execution is over.
     // The machine should restore everything and return to the caller
 
-    if(vm_switched) 
-    {
-        const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit2);
-        if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
-            return {};
+    // We need to check if the virtual machine has previously switched.
+    // If it did, we need to emit a different command to restore
+    // the original state
+
+    // Simple lambda to find the command
+    // More exits will be added in the futre. Thus making the lambda reasonable
+    const auto exit_command = [&](){
+        if(vm_switched) {
+            return Virtual::Command::kVmExit2;
         }
+
+        return Virtual::Command::kVmExit;
+    }();
+
+    const auto exit_inst = Virtual::Instruction(
+        Parameter(Parameter::kNone),
+        exit_command
+    );
+
+    if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
+        return {};
     }
-    else
-    {
-        const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit);
-        if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
-            return {};
-        }
-    }
+
+    // if(vm_switched)
+    // {
+    //     const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit2);
+    //     if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
+    //         return {};
+    //     }
+    // }
+    // else
+    // {
+    //     const auto exit_inst = Virtual::Instruction(Parameter(Parameter::kNone), Virtual::Command::kVmExit);
+    //     if(!virtual_memory.Write<Virtual::InstructionLength>(exit_inst.AssembleInstruction())) {
+    //         return {};
+    //     }
+    // }
 
     return virtual_memory;
 }
